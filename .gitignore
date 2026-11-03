@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+node_modules/
+dist/
+.env
+.env.local
+*.pem
+*.key
+service-account*.json
+seed/output/
+uploads/
+web/src/lib/types.gen.ts.bak
+.DS_Store

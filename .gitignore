@@ -18,3 +18,5 @@ web/src/lib/types.gen.ts.bak
 web/test-results/
 web/playwright-report/
 web/tsconfig.tsbuildinfo
+api/app/static/
+*.zip

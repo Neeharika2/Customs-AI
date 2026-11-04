@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 import secrets
 
@@ -13,17 +14,23 @@ from .models import UserSession
 from .routers import auth, documents, exports, manual, reports, review, settings as settings_router, shipments
 from .security import token_hash
 
-app = FastAPI(title="Customs-AI", version="0.1.0", docs_url="/api/docs",
-              openapi_url="/api/openapi.json")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if settings.is_local:
+        Base.metadata.create_all(bind=engine)
+    yield
+
+
+app = FastAPI(
+    title="Customs-AI",
+    version="0.1.0",
+    docs_url="/api/docs",
+    openapi_url="/api/openapi.json",
+    lifespan=lifespan,
+)
 
 MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
 CSRF_EXEMPT = {"/api/auth/login"}
-
-
-@app.on_event("startup")
-def startup() -> None:
-    if settings.is_local:
-        Base.metadata.create_all(bind=engine)
 
 
 @app.middleware("http")
@@ -66,6 +73,12 @@ async def security_middleware(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     if not settings.is_local:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
+            "script-src 'self'; connect-src 'self'; font-src 'self'; "
+            "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+        )
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
 
@@ -116,7 +129,7 @@ if settings.static_dir.exists():
 
     @app.get("/{path:path}")
     def spa(path: str):
-        if path.startswith("api/"):
+        if path.startswith(("api/", "healthz", "health", "v1/")):
             return JSONResponse({"detail": "Not found"}, status_code=404)
         candidate = settings.static_dir / path
         if path and candidate.is_file():

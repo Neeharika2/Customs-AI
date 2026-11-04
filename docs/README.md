@@ -113,15 +113,23 @@ customs-ai/
 
 ## Status
 
-Update this table as you go. It is the first thing to check before starting work.
+| Phase | Status | Notes |
+|---|---|---|
+| 0 | ✅ | Access checklist superseded by a local bundled Postgres; Vertex adapter present, no committed credentials |
+| 1 | ✅ | 17 tables, Alembic, auth, roles, org scoping, shell |
+| 2 | ✅ | Upload, validation, render, word boxes, local/S3 storage adapter |
+| 3 | ✅ | Fixture extractor, evidence, confidence, manual-entry path, `extraction_run` |
+| 4 | ✅ | Review workspace: viewer, overlays, evidence, inline edits, keyboard |
+| 5 | ✅ | 13 checks, input-hash resolutions, gate, approval, override |
+| 6 | ✅ | CSV export, template, preview, list, reports, settings |
+| 7 | ✅ | 24 backend tests, 3 Playwright paths, eval harness, Docker, docs |
 
-| Phase | Status | Live | Notes |
-|---|---|---|---|
-| 0 | ☐ | — | |
-| 1 | ☐ | — | |
-| 2 | ☐ | — | |
-| 3 | ☐ | — | |
-| 4 | ☐ | — | |
-| 5 | ☐ | — | |
-| 6 | ☐ | — | |
-| 7 | ☐ | — | |
+### Build outcome
+
+- 9 seeded shipments, 26 synthetic documents, 260 evaluated fields.
+- `eval/run.py`: 260/260 on extractable synthetic documents, 2 manual-entry documents, 1 missing document.
+- 24 pytest tests and 3 end-to-end paths passing.
+- One container image; Alembic migrations; S3/Vertex adapters present.
+- Honest deviation log in `TDD.md` §18.1: fixture extractor locally, background task instead of Procrastinate, multipart upload instead of presigned PUT.
+
+The full phase files remain as the working plan; the code and `TDD.md` are the as-built record.

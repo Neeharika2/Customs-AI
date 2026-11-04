@@ -1,0 +1,18 @@
+{
+  "documents_compared": 24,
+  "fields_compared": 260,
+  "correct": 260,
+  "accuracy": 100.0,
+  "evidence": {
+    "EXACT": 260
+  },
+  "manual_documents": [
+    "SHP-24813 packing",
+    "SHP-24816 bl"
+  ],
+  "missing_documents": [
+    "SHP-24815 bl"
+  ],
+  "misses": [],
+  "extractor": "fixture"
+}

@@ -11,6 +11,7 @@ import pathlib
 import sys
 import uuid
 
+sys.path.insert(0, str(pathlib.Path.cwd()))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "api"))
 
 from sqlalchemy import delete, select  # noqa: E402
@@ -127,6 +128,21 @@ def main() -> None:
     with SessionLocal() as db:
         org = db.scalar(select(Org).where(Org.name == "Demo Freight"))
         assert org is not None
+
+        # Keep the demo list clean: remove shipments created by manual testing or E2E runs.
+        demo_refs = set(manifest)
+        for extra in db.scalars(select(Shipment).where(Shipment.org_id == org.id)).all():
+            if extra.ref in demo_refs:
+                continue
+            db.execute(delete(Export).where(Export.shipment_id == extra.id))
+            db.execute(delete(Approval).where(Approval.shipment_id == extra.id))
+            db.execute(delete(CheckResolution).where(CheckResolution.shipment_id == extra.id))
+            db.execute(delete(Field).where(Field.shipment_id == extra.id))
+            db.execute(delete(LineItem).where(LineItem.shipment_id == extra.id))
+            db.execute(delete(Check).where(Check.shipment_id == extra.id))
+            db.execute(delete(Document).where(Document.shipment_id == extra.id))
+            db.delete(extra)
+        db.commit()
 
         for ref, documents in manifest.items():
             shipment = db.scalar(

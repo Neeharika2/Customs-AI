@@ -1,23 +1,32 @@
-.PHONY: venv db seed api web test fmt
+.PHONY: venv db seed api web build test e2e fmt
 
 venv:
-	uv venv --python 3.12 .venv
-	. .venv/bin/activate && uv pip install -e api
+	cd api && uv sync
 
 db:
-	.venv/bin/python scripts/dev_db.py
+	cd api && uv run python ../scripts/dev_db.py
 
 seed:
-	cd api && ../.venv/bin/python -m app.seed
+	cd api && uv run python ../seed/generate.py
+	cd api && uv run python ../seed/seed_demo.py
 
 api:
-	cd api && ../.venv/bin/uvicorn app.main:app --reload --port 8000
+	cd api && uv run uvicorn app.main:app --reload --port 8000
 
 web:
 	cd web && pnpm dev
 
+build:
+	cd web && pnpm build
+	rm -rf api/app/static
+	mkdir -p api/app/static
+	cp -r web/dist/. api/app/static/
+
 test:
-	cd api && ../.venv/bin/pytest -q
+	cd api && uv run pytest -q
+
+e2e:
+	cd web && pnpm test:e2e
 
 fmt:
-	cd api && ../.venv/bin/ruff format app tests
+	cd api && uv run ruff format app tests

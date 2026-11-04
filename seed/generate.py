@@ -10,7 +10,7 @@ import pathlib
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-import fitz
+import pymupdf as fitz
 from reportlab.lib.colors import HexColor, black
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfbase import pdfmetrics

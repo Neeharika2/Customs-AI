@@ -6,15 +6,34 @@
 |---|---|
 | **Client** | Company A — freight forwarder and customs broker, Navi Mumbai |
 | **Document** | Technical Design Document (TDD) |
-| **Version** | 1.0 — pre-implementation |
-| **Date** | 3 November 2026 |
+| **Version** | 1.1 — as-built |
+| **Date** | 4 November 2026 |
 | **Author** | Build candidate |
-| **Status** | Approved for build |
-| **GitHub repository** | `https://github.com/<handle>/customs-ai` — **fill before submission** |
-| **Live application** | `https://<app-host>` — **fill before submission** |
+| **Status** | Implemented — 7-day slice; pilot work identified |
+| **GitHub repository** | https://github.com/Neeharika2/Customs-AI |
+| **Live application** | Not publicly deployed — run locally per `deployment.md` |
 | **Demo credentials** | See `deployment.md` (not reproduced here) |
 
 > **Reading guide.** This document records engineering decisions and their trade-offs, not definitions of frameworks. Every claim about client behaviour is sourced from the brief. Every assumption is labelled **A1–A10** in §4 and referenced where it matters. Figures marked *estimate* are engineering estimates, not measurements.
+
+### Build status — what is actually running
+
+The seven-day slice is implemented and running locally. The following is measured, not planned:
+
+| Item | State |
+|---|---|
+| Schema | 17 tables, Alembic initial migration, fresh-database upgrade verified |
+| Auth | Argon2id, database sessions, CSRF double-submit, org scoping, manager/executive split |
+| Ingestion | PDF/JPEG/PNG upload, magic-byte and size validation, PyMuPDF rendering, word-level boxes |
+| Extraction | Deterministic fixture extractor locally; Vertex AI adapter behind the same interface |
+| Verification | 13 rules, `input_hash`-bound resolutions, gate, approval invalidation |
+| Review | Document + fields + evidence + checks in one screen; manual entry; keyboard flow |
+| Export | Configurable column map, CSV with BOM/CRLF/formula escaping, preview and gate |
+| Reporting | Correction rate by field and supplier, evidence coverage, first-pass acceptance |
+| Tests | 22 pytest, 3 Playwright end-to-end paths, evaluation harness |
+| Evaluation | 260/260 fields on 24 synthetic documents (fixture extractor — see §16.3) |
+
+**Deviations from the design as originally written** are listed in §18.1. They are recorded rather than hidden. The most material: extraction runs as an in-process background task rather than a Procrastinate worker, and the local demo uses the fixture extractor because no GCP credentials are committed.
 
 ---
 
@@ -52,7 +71,9 @@ The same system hardened against 200 real shipments, with the client's actual fi
 | Availability | 99.5% business hours (07:00–20:00 IST) |
 | Data residency | India — application, database, object storage, model inference |
 | Retention | 180 days post-export, configurable |
-| Deployment | Single container image, two process types, Mumbai region |
+| Deployment | Single container image, one process, Mumbai region |
+
+Measured in the slice: 9 seeded shipments, 26 synthetic documents, 260 evaluated fields, 3 end-to-end paths. Fixture extraction is sub-second; Gemini latency and cost remain targets until a production key is configured. The **review-time** and **amendment-rate** targets are pilot measurements, not claims about this build.
 
 ---
 
@@ -180,24 +201,28 @@ Browser
        ▼                               ▼
 ┌──────────────────┐          ┌──────────────────────┐
 │  PostgreSQL      │          │  S3 ap-south-1       │
-│  data + queue    │          │  originals, pages,   │
-│  (Procrastinate) │          │  raw model responses │
+│  data + job      │          │  originals, pages,   │
+│  state           │          │  raw model responses │
 └──────┬───────────┘          └──────────────────────┘
        │  job
        ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  Worker container (same image, different entrypoint)         │
+│  Extraction job                                              │
+│  background task in this slice; Procrastinate worker in the  │
+│  production path — same image, separate entrypoint           │
 │  validate → render → text layer → Gemini → Pydantic          │
 │  → evidence → checks → persist                               │
 └──────────────────────────────────────────────────────────────┘
 ```
 
+The boundary is deliberate even though the transport is simplified: `process_document(document_id)` takes only an id, opens its own session, and is idempotent. Moving it behind Procrastinate is a change to the enqueue call, not to the pipeline.
+
 ### 5.3 Component responsibilities
 
 | Component | Responsibility | Explicitly not responsible |
 |---|---|---|
-| API | Auth, authorisation, CRUD, presigned URLs, gate evaluation, export | Running extraction |
-| Worker | Extract, verify evidence, run checks, persist results | Serving users |
+| API | Auth, authorisation, CRUD, file streaming, gate evaluation, export | Long-running extraction in the request |
+| Extraction job | Extract, verify evidence, persist results; checks recomputed after | Serving users |
 | Checks engine | Deterministic rules over normalised values | Calling the model |
 | Gate | Decide exportability from data, not UI state | Editing data |
 | SPA | Presentation, optimistic edits, keyboard flow | Business rules, authorisation |
@@ -220,7 +245,7 @@ Internal boundaries are enforced by module structure (`api/`, `domain/`, `extrac
 | Backend | FastAPI + Python | Next.js full-stack | PyMuPDF word-level boxes, Pydantic-constrained model output, richer document ecosystem |
 | Frontend | React SPA | Server-rendered templates | The review screen needs viewer state, keyboard flow and optimistic edits; templates would reimplement them |
 | Rendering | Server-side page PNGs | PDF.js in the browser | One render for PDFs, scans and photos; highlights are computed by us; no client-side PDF engine parsing untrusted files |
-| Queue | Procrastinate on Postgres | Redis + Celery | One less service; volume is ~110 jobs/day; retries and scheduling are sufficient |
+| Queue | Background task now; Procrastinate boundary | Redis + Celery | One less service to operate for ~110 jobs/day; the 7-day slice keeps the job function isolated so the worker can be added without touching the pipeline |
 | Storage | S3 ap-south-1 | Cloudflare R2 | R2 jurisdictions are EU and US; it cannot guarantee India residency for client documents |
 | AI | Vertex AI, `asia-south1` | Gemini Developer API | Free tier trains on data; paid tier retains abuse-review access; Vertex provides enterprise terms and regional processing |
 | Field storage | One row per field | Wide columns per document | Enables per-field evidence, confidence, audit and `GROUP BY` accuracy |
@@ -230,10 +255,10 @@ Internal boundaries are enforced by module structure (`api/`, `domain/`, `extrac
 ### 5.6 Request and job lifecycle
 
 1. `POST /shipments` creates a draft.
-2. Upload is a presigned `PUT` straight to S3; the API never proxies file bytes.
-3. `POST /shipments/{id}/documents/confirm` validates metadata, records the SHA-256, and enqueues one job per document.
-4. The worker downloads the object, renders pages, extracts, verifies, runs checks, and writes fields and checks in a single transaction.
-5. The shipment status is derived from its documents; the SPA polls `GET /shipments/{id}/status` every 2 seconds while any document is processing.
+2. Upload is a multipart `POST` to the API in this slice. The API validates magic bytes, size and page limits before storing. In an S3 deployment the same storage adapter returns presigned read URLs and can be extended to presigned writes; direct upload was kept because it gives server-side validation before an object exists and 25 MB is small enough for a request worker.
+3. The document row is created with a SHA-256, and one extraction job is scheduled per document.
+4. The job loads the object, renders pages, extracts, verifies evidence, runs checks, and writes fields and checks in a single transaction.
+5. The shipment status is derived from its documents; the SPA polls `GET /shipments/{id}` every 1.2 seconds while any document is processing.
 6. Any field edit triggers a synchronous re-run of the checks for that shipment — checks are pure and complete in milliseconds.
 7. Export evaluates the gate server-side, renders CSV, stores it, and records an immutable export row.
 
@@ -363,7 +388,7 @@ approval_decision  APPROVE | REJECT
 ### 6.5 Idempotency and concurrency
 
 - **Extraction.** The unique run key makes a retried job a no-op or a reuse. If the run exists and succeeded, the worker returns. Writes for one document happen in a single transaction: delete existing fields for that document, insert the new set. A crash leaves the previous state intact.
-- **Uploads.** The SPA hashes the file before requesting a presigned URL; the API rejects a duplicate `(shipment_id, sha256)` with a link to the existing document instead of creating a second.
+- **Uploads.** The API hashes the received bytes and rejects a duplicate `(shipment_id, sha256)` with a link to the existing document instead of creating a second.
 - **Checks.** Recomputation is a full delete-and-insert for the shipment inside one transaction. Because checks are pure functions of field values, the result is deterministic.
 - **Exports.** `content_hash` is computed over the rendered CSV bytes. A second identical request returns the existing object.
 - **Concurrent review.** Two users editing the same field is possible but rare. Optimistic concurrency uses `field.updated_at`; a stale write returns `409` with both values rather than silently overwriting. Correctness beats convenience here — silent overwrite is exactly the failure mode being eliminated.
@@ -461,6 +486,8 @@ Manual entry is a first-class state, not an error page. The page image is displa
 | Logging | Prompt and response stored in our bucket for audit and evaluation, under the same retention rule |
 
 The **Gemini Developer API is not used for client documents**. Its free tier is explicitly used to improve Google's products, and the paid tier retains abuse-monitoring access. For a system whose selling point is confidentiality, that is disqualifying. It may be used for the public demo with synthetic documents, and this document would say so.
+
+**Local demo extractor.** When `VERTEX_MODEL` is empty, the pipeline selects a deterministic fixture extractor. It reads the native text layer and applies document-specific parsers, then flows through the same Pydantic validation, evidence verification, confidence formula, persistence, checks and gate. The review screen shows a **Demo extractor** label so the distinction is never hidden. The Vertex adapter in `api/app/extract/vertex.py` is the production path; it was not exercised here because no GCP credentials are committed.
 
 ### 8.2 Why not OCR-first
 
@@ -710,30 +737,29 @@ Checks contain no clock, no randomness and no network calls. Given the same fiel
 ### 10.1 Upload → extraction
 
 ```
-Executive        API                  S3            Queue        Worker          Vertex
-    │             │                   │              │            │               │
-    │ create ────▶│                   │              │            │               │
-    │◀── id ──────│                   │              │            │               │
-    │ presign ───▶│                   │              │            │               │
-    │◀── url ─────│                   │              │            │               │
-    │ PUT file ───────────────────────▶│              │            │               │
-    │ confirm ───▶│ validate meta     │              │            │               │
-    │             │ record sha256     │              │            │               │
-    │             │ enqueue ────────────────────────▶│            │               │
-    │◀── 202 ─────│                   │              │            │               │
-    │             │                   │              │ pick ─────▶│               │
-    │             │                   │◀── get ───────────────────│               │
-    │             │                   │              │            │ render pages  │
-    │             │                   │              │            │ text layer    │
-    │             │                   │              │            │ extract ─────▶│
-    │             │                   │              │            │◀── json ──────│
-    │             │                   │              │            │ evidence      │
-    │             │                   │              │            │ checks        │
-    │             │◀── persist ───────────────────────────────────│               │
-    │ poll ──────▶│ status            │              │            │               │
+Executive        API               Storage          Job            Vertex
+    │             │                   │              │               │
+    │ create ────▶│                   │              │               │
+    │◀── id ──────│                   │              │               │
+    │ POST file ─▶│ validate magic    │              │               │
+    │             │ size / page caps  │              │               │
+    │             │ sha256            │              │               │
+    │             │ store ───────────▶│              │               │
+    │             │ create document   │              │               │
+    │             │ schedule ────────────────────────▶│               │
+    │◀── 201 ─────│                   │              │               │
+    │             │                   │◀── get ──────│               │
+    │             │                   │              │ render pages  │
+    │             │                   │              │ text layer    │
+    │             │                   │              │ extract ─────▶│
+    │             │                   │              │◀── json ──────│
+    │             │                   │              │ evidence      │
+    │             │                   │              │ checks        │
+    │             │◀── persist ───────────────────────│               │
+    │ poll ──────▶│ shipment status   │              │               │
 ```
 
-The API never handles file bytes, so upload time is independent of application memory and a 25 MB scan cannot exhaust a request worker.
+Uploads are validated before an object is visible to the review path. A 25 MB cap bounds request memory; the render and extraction work happens after the response.
 
 ### 10.2 Review, correction, recheck
 
@@ -1123,18 +1149,26 @@ The rules engine is where a defect reaches a customs filing, so it receives the 
 | Export | 6 | Header order, quoting, BOM, row count, template version |
 | E2E | 3 | Happy path, blocked path, manual-entry path |
 
+**Shipped in this slice:** 22 pytest cases covering the check catalogue, confidence gates, stale-resolution invalidation, authz, CSRF, cross-org access and CSV correctness; 3 Playwright paths. The larger counts above are the pilot target. The slice tests the highest-consequence logic rather than every permutation, and §16.6 says what that leaves untested.
+
 ### 16.3 Golden set and harness
 
-Ten documents with hand-verified ground truth ship with the repository. `eval/` runs the real pipeline against them and prints:
+`eval/run.py` compares the persisted fields for the nine seeded shipments against a generated golden set. It evaluates the original extraction — before any human correction — by reading the earliest `correction.old_value`, so a correction cannot be scored as an extraction miss.
 
-- per-field exact-match accuracy, by field and document type;
-- evidence-level distribution;
-- correction rate by supplier;
-- confusion list (expected vs actual) for every miss.
+Measured on 4 November 2026:
 
-The harness is deliberately built on day 4, not day 6, because its result decides whether OCR fallback is required (§3.3). A decision made on day 6 cannot be acted on.
+```
+documents compared 24 · fields compared 260 · exact match 260/260 (100.0%)
+Evidence distribution: EXACT 260
+Manual entry documents: 2 (SHP-24813 packing, SHP-24816 bl)
+Missing documents: 1 (SHP-24815 bl)
+```
 
-For the client's 200 shipments, the same harness runs against a holdout split — 140 development, 60 evaluation — after the pilot provides the documents. Reporting accuracy on the same set used to tune prompts is not evidence.
+The harness prints a per-field table, every mismatch with expected/actual, and writes `eval/results.json`.
+
+**This is not a Gemini accuracy measurement.** The local extractor is deterministic and the documents are synthetic; the number proves the pipeline, evidence and persistence path, not a vision model. The honest claim is the mechanism: the same harness runs against 200 real shipments in week 3, with a holdout split of 140 development / 60 evaluation. Reporting accuracy on the set used to tune prompts is not evidence.
+
+The harness was built during the slice, before the pilot, because its result determines whether OCR fallback is required (§3.3).
 
 ### 16.4 Metric definitions
 
@@ -1163,7 +1197,8 @@ Extraction accuracy and discrepancy quality are reported separately. A system ca
 ### 16.6 What is not tested, and why
 
 - **Live model output in CI.** Non-deterministic and costly; covered by recorded fixtures and the separate eval harness.
-- **Real-world document variety.** Ten synthetic documents cannot represent 200 real ones. This is the largest known gap and the first task of week 3.
+- **Real-world document variety.** Nine synthetic shipments cannot represent 200 real ones. This is the largest known gap and the first task of week 3.
+- **Durable job execution.** The slice runs extraction as an in-process background task. A restart during extraction can leave a document `PROCESSING`; the state is visible and the document can be re-uploaded. A durable worker is the first productionisation item.
 - **Load beyond 14 users.** The architecture will hold, but it is unmeasured; load testing is week 5.
 - **DPDP legal sufficiency.** Controls are implemented; compliance is a contractual and legal question, not a test.
 
@@ -1175,23 +1210,28 @@ Extraction accuracy and discrepancy quality are reported separately. A system ca
 
 | Environment | Purpose | Data |
 |---|---|---|
-| Local | Development, tests | Synthetic, MinIO, Docker Compose |
+| Local | Development, tests | Synthetic, bundled PostgreSQL, local storage |
 | Staging | Demo and review | Synthetic, Mumbai region |
 | Production | Pilot | Client documents, Mumbai region |
 
 ### 17.2 Packaging
 
-One image, two entrypoints:
+One image, one entrypoint in this slice:
 
 ```dockerfile
-# web
+# web + API
 uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
 
-# worker
+The SPA is built in a multi-stage build and copied to `app/static`. One origin means no CORS, one session cookie, one CSP. Alembic runs before uvicorn in the container entrypoint.
+
+The production path adds a second entrypoint from the same image:
+
+```
 procrastinate --app=app.worker.app worker
 ```
 
-The SPA is built in a multi-stage build and copied to `app/static`. One origin means no CORS, one session cookie, one CSP.
+That worker is not enabled in this slice; see §18.1.
 
 ### 17.3 Environment variables
 
@@ -1202,6 +1242,8 @@ APP_ENV
 APP_BASE_URL
 SECRET_KEY
 DATABASE_URL
+STORAGE_BACKEND
+LOCAL_STORAGE_DIR
 S3_ENDPOINT
 S3_REGION
 S3_BUCKET
@@ -1210,11 +1252,14 @@ S3_SECRET_ACCESS_KEY
 GOOGLE_CLOUD_PROJECT
 VERTEX_LOCATION
 VERTEX_MODEL
+GOOGLE_APPLICATION_CREDENTIALS
 AI_MONTHLY_CAP_PAISE
 MAX_UPLOAD_MB
 MAX_PAGES
 SESSION_TTL_HOURS
 RETENTION_DAYS
+DEMO_EXEC_PASSWORD
+DEMO_MANAGER_PASSWORD
 ```
 
 ### 17.4 Migrations and backups
@@ -1233,9 +1278,9 @@ Images are immutable and tagged by commit. Rollback is a redeploy of the previou
 
 | Symptom | First check | Action |
 |---|---|---|
-| Jobs not progressing | Worker health, queue depth | Restart worker; jobs are idempotent |
+| Extraction not progressing | API process health; document status | Restart the API; the job is idempotent and a manual re-upload recovers |
 | Extraction failing widely | Vertex quota, region status, spend cap | Check cap; fall back to manual entry; do not disable the gate |
-| Upload failures | Bucket policy, presign clock skew | Verify credentials; clock sync |
+| Upload failures | Bucket policy, storage backend, disk path | Verify credentials and `LOCAL_STORAGE_DIR`; check disk space |
 | Export rejected by filing software | Template version, column order, BOM | Reproduce with preview; roll template version |
 | Suspected data leak | Audit log, presigned URL TTL, access logs | Revoke sessions, rotate keys, follow breach runbook |
 
@@ -1245,7 +1290,7 @@ Images are immutable and tagged by commit. Rollback is a redeploy of the previou
 
 | # | Decision | Alternatives | Consequence |
 |---|---|---|---|
-| D1 | Modular monolith, one image, two entrypoints | Microservices; separate worker repo | Simple deploys; worker split preserved |
+| D1 | Modular monolith, one image; worker boundary preserved | Microservices; separate worker repo | Simple deploy now; the extraction job is isolated so the worker can be added without touching the pipeline |
 | D2 | FastAPI + React | Next.js full-stack | Two languages; better document tooling and review UI |
 | D3 | Server-side page rendering | Client PDF.js | Consistent highlights; no client PDF parser; heavier storage |
 | D4 | Vertex AI `asia-south1` | Gemini Developer API | Higher setup cost; defensible data handling |
@@ -1258,6 +1303,23 @@ Images are immutable and tagged by commit. Rollback is a redeploy of the previou
 | D11 | S3 ap-south-1 | Cloudflare R2 | Small storage cost; India residency |
 | D12 | No confidence percentage in UI | Show 0–1 score everywhere | Avoids false precision; action-oriented bands |
 
+### 18.1 As-built deviations
+
+The slice is honest about the gap between the design and the delivery. These are the differences a reviewer will find in the code:
+
+| Area | Designed | Built | Why, and what closes the gap |
+|---|---|---|---|
+| Database session | SQLAlchemy async | SQLAlchemy sync, FastAPI threadpool | The workload is small and I/O-bound; sync sessions remove an async failure surface from the 7-day slice. Swapping to `AsyncSession` is mechanical if concurrency grows. |
+| Extraction transport | Procrastinate worker | FastAPI `BackgroundTasks` | Fewer moving parts for a single-instance demo. `process_document(document_id)` takes only an id, opens its own session and is idempotent, so moving it behind Procrastinate changes the enqueue call only. A process restart during extraction can strand a document in `PROCESSING`; that is the known cost. |
+| Model | Vertex AI Gemini | Fixture extractor locally; Vertex adapter present | No GCP credentials are committed. The UI labels the mode **Demo extractor**; the adapter is `api/app/extract/vertex.py`. The 260/260 evaluation measures the pipeline, not Gemini. |
+| Upload transport | Presigned `PUT` to S3 | Multipart `POST` to the API | Server-side magic-byte validation before storage, and 25 MB is small. The storage adapter already issues presigned reads; presigned writes are an adapter extension, not an architecture change. |
+| Retention | Scheduled deletion job | Retention modelled, deletion-on-request path; no scheduler | The scheduled purge is a productionisation item; documents are still deletable manually and the policy is explicit. |
+| XLSX | Deferred until the template arrives | CSV only | A9. XLSX is one `openpyxl` function behind the same column map. |
+| Reports | Per-field and per-supplier | Implemented, with small-sample suppression | Built, not cut. |
+| Settings | Manager-only | Implemented for tolerances, retention, template view and users | Built. |
+
+The pattern: the boundaries that would be expensive to move later (job function, storage adapter, column map, evidence model) are in place. The transport choices that are cheap to swap were chosen for the seven-day window and are documented rather than disguised.
+
 ---
 
 ## 19. What we cut, and what comes next
@@ -1267,13 +1329,16 @@ Images are immutable and tagged by commit. Rollback is a redeploy of the previou
 - Importer portal and notifications — the brief's core build does not require them; a mocked email request demonstrates the intent.
 - HSN classification and duty — explicitly out of scope; the system extracts and format-validates HSN only.
 - Customs portal filing — the client's constraint is to keep the existing software.
-- Excel formatting — deferred until the real template exists.
-- Supplier analytics beyond a basic table — the review loop must be measured first.
-- Multi-organisation UI — schema supports it; interface does not expose it.
+- Excel `.xlsx` formatting — deferred until the real template exists (A9).
+- A durable Procrastinate worker — the job boundary exists; the transport is an in-process background task in this slice.
+- The scheduled retention purge — policy and delete-on-request exist; the daily job does not.
+- OCR fallback — gated on evidence coverage from real scans, not added speculatively.
+- Supplier analytics beyond the basic table — the review loop must be measured first.
+- Multi-organisation UI — schema supports it; the interface does not expose it.
 
 ### 19.2 Next, in order
 
-1. **Week 3 — client inputs.** Real import template (A1); 200 historical shipments with ground truth. Until these exist, export compatibility and accuracy are claims, not facts.
+1. **Week 3 — client inputs.** Real import template (A1); 200 historical shipments with ground truth. Until these exist, export compatibility and accuracy are claims, not facts. Move extraction to the Procrastinate worker and add the retention job in the same pass.
 2. **Week 4 — measure and tune.** Run the harness on the holdout split; add OCR only if evidence coverage demands it; tune tolerances per supplier.
 3. **Week 5 — shadow pilot.** Fourteen users, real shipments, no filing dependency. Measure median review time and correction rate.
 4. **Week 6 — harden and hand over.** Fix the top correction causes, train staff, instrument the amendment baseline.
@@ -1302,6 +1367,8 @@ Images are immutable and tagged by commit. Rollback is a redeploy of the previou
 | One bad page blocks a shipment | Low | Work stops | Per-document status, manual entry |
 | Model cost overrun | Low | Budget surprise | Spend cap, caching, Flash class |
 | DPDP contract not signed before real data | Medium | Legal exposure | Synthetic data until DPA and sub-processor list are agreed |
+| In-process extraction lost on restart | Medium | A document stranded in `PROCESSING` | Visible per-document state; re-upload recovers; Procrastinate is the week-3 fix |
+| Fixture extractor hides a real-model failure | Medium | False confidence in accuracy | UI labels the mode; Vertex adapter has its own eval path once a key exists; the 200-shipment run is the arbiter |
 
 ### 20.2 Open questions for the client
 

@@ -1,0 +1,42 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: customs
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-customs-local}
+      POSTGRES_DB: customs
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U customs"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    environment:
+      APP_ENV: production
+      APP_BASE_URL: http://localhost:8000
+      SECRET_KEY: ${SECRET_KEY:-change-me-before-sharing}
+      DATABASE_URL: postgresql+psycopg://customs:${POSTGRES_PASSWORD:-customs-local}@db:5432/customs
+      STORAGE_BACKEND: local
+      LOCAL_STORAGE_DIR: /app/storage
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      VERTEX_LOCATION: ${VERTEX_LOCATION:-asia-south1}
+      VERTEX_MODEL: ${VERTEX_MODEL:-}
+      DEMO_EXEC_PASSWORD: ${DEMO_EXEC_PASSWORD:-demo-exec-2026}
+      DEMO_MANAGER_PASSWORD: ${DEMO_MANAGER_PASSWORD:-demo-manager-2026}
+    ports:
+      - "8000:8000"
+    volumes:
+      - appdata:/app/storage
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  appdata:

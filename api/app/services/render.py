@@ -4,7 +4,7 @@ import io
 import json
 from dataclasses import dataclass
 
-import fitz
+import pymupdf as fitz
 from PIL import Image
 
 from .storage import Storage

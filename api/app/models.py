@@ -20,6 +20,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -472,3 +473,13 @@ class AuditEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+@event.listens_for(AuditEvent, "before_update")
+def _audit_no_update(mapper, connection, target) -> None:  # noqa: ANN001
+    raise ValueError("audit_event is append-only")
+
+
+@event.listens_for(AuditEvent, "before_delete")
+def _audit_no_delete(mapper, connection, target) -> None:  # noqa: ANN001
+    raise ValueError("audit_event is append-only")

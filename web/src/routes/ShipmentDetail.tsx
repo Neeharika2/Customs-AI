@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
+import { HistoryDrawer } from "../components/HistoryDrawer";
 import { Icon } from "../components/Icon";
 import {
   api,
@@ -54,15 +55,23 @@ function DocSlot({
   document,
   uploading,
   progress,
+  canEdit,
+  busy,
   onPick,
   onOpenReview,
+  onReprocess,
+  onRemove,
 }: {
   type: DocumentType;
   document?: DocumentOut;
   uploading: boolean;
   progress: number;
+  canEdit: boolean;
+  busy: boolean;
   onPick: (file: File) => void;
   onOpenReview: () => void;
+  onReprocess: () => void;
+  onRemove: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
@@ -108,11 +117,34 @@ function DocSlot({
               <span>{document.error_detail ?? "Extraction failed."}</span>
             </div>
           ) : null}
-          <div style={{ marginTop: "auto", display: "flex", gap: 6 }}>
+          <div style={{ marginTop: "auto", display: "grid", gap: 4 }}>
             <button className="btn btn-sm" type="button" onClick={onOpenReview}>
               <Icon name="eye" size={13} />
               {document.status === "NEEDS_MANUAL_ENTRY" ? "Enter manually" : "View fields"}
             </button>
+            {canEdit && (
+              <div style={{ display: "flex", gap: 2 }}>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  type="button"
+                  disabled={busy}
+                  onClick={onReprocess}
+                  title="Run extraction again on this file"
+                >
+                  <Icon name="refresh" size={12} className={busy ? "spin" : ""} />
+                  Re-extract
+                </button>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  type="button"
+                  disabled={busy}
+                  onClick={onRemove}
+                  style={{ color: "var(--block-fg)" }}
+                >
+                  Remove
+                </button>
+              </div>
+            )}
           </div>
         </div>
       ) : (
@@ -218,6 +250,9 @@ export function ShipmentDetail() {
   const queryClient = useQueryClient();
   const [uploading, setUploading] = useState<Partial<Record<DocumentType, number>>>({});
   const [error, setError] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<DocumentOut | null>(null);
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
 
   const query = useQuery({
     queryKey: ["shipment", id],
@@ -258,6 +293,34 @@ export function ShipmentDetail() {
     }
   }
 
+  async function reprocess(document: DocumentOut) {
+    setError(null);
+    setActionBusy(document.id);
+    try {
+      await api.reprocessDocument(document.id);
+      await queryClient.invalidateQueries({ queryKey: ["shipment", id] });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Could not re-extract this document.");
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  async function remove(document: DocumentOut) {
+    setError(null);
+    setActionBusy(document.id);
+    try {
+      await api.deleteDocument(document.id);
+      setRemoveTarget(null);
+      await queryClient.invalidateQueries({ queryKey: ["shipment", id] });
+      await queryClient.invalidateQueries({ queryKey: ["shipments"] });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Could not remove this document.");
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
   if (query.isLoading) {
     return (
       <div className="page">
@@ -290,6 +353,7 @@ export function ShipmentDetail() {
   const byType = new Map(shipment.documents.map((document) => [document.type, document]));
   const extracted = shipment.documents.filter((doc) => doc.status === "EXTRACTED").length;
   const hasReviewable = shipment.documents.length > 0;
+  const canEdit = ["DRAFT", "EXTRACTING", "NEEDS_REVIEW"].includes(shipment.status);
 
   return (
     <div className="page page-enter">
@@ -313,6 +377,10 @@ export function ShipmentDetail() {
           </p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn" type="button" onClick={() => setHistoryOpen(true)}>
+            <Icon name="clock" size={15} />
+            History
+          </button>
           <button
             className="btn btn-primary"
             type="button"
@@ -385,8 +453,18 @@ export function ShipmentDetail() {
             document={byType.get(type)}
             uploading={type in uploading}
             progress={uploading[type] ?? 0}
+            canEdit={canEdit}
+            busy={actionBusy === byType.get(type)?.id}
             onPick={(file) => void startUpload(type, file)}
             onOpenReview={() => navigate(`/shipments/${shipment.id}/review`)}
+            onReprocess={() => {
+              const document = byType.get(type);
+              if (document) void reprocess(document);
+            }}
+            onRemove={() => {
+              const document = byType.get(type);
+              if (document) setRemoveTarget(document);
+            }}
           />
         ))}
       </div>
@@ -411,6 +489,44 @@ export function ShipmentDetail() {
         <div className="banner" style={{ marginTop: 18, background: "#f2faf6", color: "var(--ok-fg)" }}>
           <Icon name="check" size={15} />
           <span>Approved. The shipment is ready to export in the filing layout.</span>
+        </div>
+      )}
+
+      <HistoryDrawer
+        shipmentId={shipment.id}
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+      />
+
+      {removeTarget && (
+        <div className="modal-backdrop" onClick={() => setRemoveTarget(null)}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <h2 style={{ fontSize: 16, fontWeight: 600 }}>
+              Remove {DOC_LABEL[removeTarget.type]}?
+            </h2>
+            <p style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6, lineHeight: 1.55 }}>
+              This deletes the file, its extracted fields and its line items. The shipment stays and
+              you can upload a replacement.
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+              <button className="btn" type="button" onClick={() => setRemoveTarget(null)}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-danger"
+                type="button"
+                disabled={actionBusy === removeTarget.id}
+                onClick={() => void remove(removeTarget)}
+              >
+                {actionBusy === removeTarget.id ? (
+                  <Icon name="refresh" size={14} className="spin" />
+                ) : (
+                  <Icon name="x" size={14} />
+                )}
+                Remove document
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

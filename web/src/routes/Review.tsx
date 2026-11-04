@@ -1,8 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
+import { HistoryDrawer } from "../components/HistoryDrawer";
 import { Icon } from "../components/Icon";
-import { api, ApiError, type CheckOut, type DocumentReview, type FieldOut, type Review } from "../lib/api";
+import {
+  api,
+  ApiError,
+  type CheckOut,
+  type DocumentReview,
+  type FieldOut,
+  type LineItemOut,
+  type Review,
+} from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatDate, num, STATUS_LABEL } from "../lib/format";
 
@@ -299,6 +308,181 @@ function ManualCard({
   );
 }
 
+function LineEditor({
+  line,
+  docType,
+  busy,
+  onClose,
+  onSave,
+}: {
+  line: LineItemOut;
+  docType: string;
+  busy: boolean;
+  onClose: () => void;
+  onSave: (values: Record<string, unknown>) => void;
+}) {
+  const [description, setDescription] = useState(line.description_raw ?? "");
+  const [hsn, setHsn] = useState(line.hsn_code ?? "");
+  const [qty, setQty] = useState(String(line.qty));
+  const [uom, setUom] = useState(line.uom ?? "");
+  const [unitPrice, setUnitPrice] = useState(line.unit_price != null ? String(line.unit_price) : "");
+  const [amount, setAmount] = useState(line.amount != null ? String(line.amount) : "");
+  const [gross, setGross] = useState(
+    line.gross_weight_kg != null ? String(line.gross_weight_kg) : "",
+  );
+  const [net, setNet] = useState(line.net_weight_kg != null ? String(line.net_weight_kg) : "");
+  const [reason, setReason] = useState("");
+
+  const number = (value: string): number | null =>
+    value.trim() === "" ? null : Number(value);
+
+  const valid = description.trim().length > 0 && Number(qty) > 0;
+
+  function save() {
+    const values: Record<string, unknown> = {
+      description_raw: description.trim(),
+      qty: Number(qty),
+      uom: uom.trim() || null,
+      reason: reason.trim() || undefined,
+    };
+    if (docType === "INVOICE") {
+      values.hsn_code = hsn.trim() || null;
+      values.unit_price = number(unitPrice);
+      values.amount = number(amount);
+    } else {
+      values.gross_weight_kg = number(gross);
+      values.net_weight_kg = number(net);
+    }
+    onSave(values);
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="modal"
+        style={{ maxWidth: 540 }}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h2 style={{ fontSize: 16, fontWeight: 600 }}>Correct line {line.line_no}</h2>
+        <p style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 4 }}>
+          Saving reruns every cross-document check immediately.
+        </p>
+
+        <div className="line-editor-grid">
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
+            <label className="label" htmlFor="line-description">Description</label>
+            <input
+              id="line-description"
+              className="input"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              autoFocus
+            />
+          </div>
+
+          {docType === "INVOICE" && (
+            <div className="field">
+              <label className="label" htmlFor="line-hsn">HSN</label>
+              <input id="line-hsn" className="input num" value={hsn} onChange={(event) => setHsn(event.target.value)} />
+            </div>
+          )}
+
+          <div className="field">
+            <label className="label" htmlFor="line-qty">Quantity</label>
+            <input
+              id="line-qty"
+              className="input num"
+              type="number"
+              step="0.001"
+              min="0"
+              value={qty}
+              onChange={(event) => setQty(event.target.value)}
+            />
+          </div>
+
+          <div className="field">
+            <label className="label" htmlFor="line-uom">Unit</label>
+            <input id="line-uom" className="input" value={uom} onChange={(event) => setUom(event.target.value)} />
+          </div>
+
+          {docType === "INVOICE" ? (
+            <>
+              <div className="field">
+                <label className="label" htmlFor="line-unit-price">Unit price</label>
+                <input
+                  id="line-unit-price"
+                  className="input num"
+                  type="number"
+                  step="0.0001"
+                  value={unitPrice}
+                  onChange={(event) => setUnitPrice(event.target.value)}
+                />
+              </div>
+              <div className="field">
+                <label className="label" htmlFor="line-amount">Amount</label>
+                <input
+                  id="line-amount"
+                  className="input num"
+                  type="number"
+                  step="0.01"
+                  value={amount}
+                  onChange={(event) => setAmount(event.target.value)}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="field">
+                <label className="label" htmlFor="line-gross">Gross weight kg</label>
+                <input
+                  id="line-gross"
+                  className="input num"
+                  type="number"
+                  step="0.001"
+                  value={gross}
+                  onChange={(event) => setGross(event.target.value)}
+                />
+              </div>
+              <div className="field">
+                <label className="label" htmlFor="line-net">Net weight kg</label>
+                <input
+                  id="line-net"
+                  className="input num"
+                  type="number"
+                  step="0.001"
+                  value={net}
+                  onChange={(event) => setNet(event.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
+            <label className="label" htmlFor="line-reason">Reason (optional)</label>
+            <input
+              id="line-reason"
+              className="input"
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Why is this correction needed?"
+            />
+          </div>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
+          <button className="btn" type="button" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn btn-primary" type="button" disabled={!valid || busy} onClick={save}>
+            {busy ? <Icon name="refresh" size={14} className="spin" /> : <Icon name="check" size={14} />}
+            Save correction
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ReviewScreen() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -315,6 +499,9 @@ export function ReviewScreen() {
   const [toast, setToast] = useState<string | null>(null);
   const [decision, setDecision] = useState<null | "APPROVE" | "REJECT">(null);
   const [decisionNote, setDecisionNote] = useState("");
+  const [reopenOpen, setReopenOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [editingLine, setEditingLine] = useState<LineItemOut | null>(null);
   const [zoom, setZoom] = useState(1);
   const viewerRef = useRef<HTMLDivElement>(null);
 
@@ -489,6 +676,37 @@ export function ReviewScreen() {
     onError: (error) => flash(error instanceof ApiError ? error.detail : "Could not save manual entry"),
   });
 
+  const patchLine = useMutation({
+    mutationFn: ({ lineId, values }: { lineId: string; values: Record<string, unknown> }) =>
+      api.patchLine(lineId, values as never),
+    onSuccess: (data) => {
+      queryClient.setQueryData<Review>(["review", id], (old) =>
+        old
+          ? {
+              ...old,
+              lines: old.lines.map((line) => (line.id === data.line.id ? data.line : line)),
+              gate: data.gate,
+              checks: data.check,
+            }
+          : old,
+      );
+      setEditingLine(null);
+      flash("Line corrected");
+    },
+    onError: (error) => flash(error instanceof ApiError ? error.detail : "Could not correct the line"),
+  });
+
+  const reopen = useMutation({
+    mutationFn: () => api.reopen(id as string),
+    onSuccess: () => {
+      setReopenOpen(false);
+      flash("Shipment reopened for review");
+      void queryClient.invalidateQueries({ queryKey: ["review", id] });
+      void queryClient.invalidateQueries({ queryKey: ["shipment", id] });
+    },
+    onError: (error) => flash(error instanceof ApiError ? error.detail : "Could not reopen"),
+  });
+
   function selectField(field: FieldOut) {
     setActiveFieldId(field.id);
     const document = review?.documents.find((item) => item.id === field.document_id);
@@ -596,6 +814,15 @@ export function ReviewScreen() {
         </div>
         <StatusPill status={shipment.status} />
         <div className="review-head-right">
+          <button
+            className="btn btn-sm"
+            type="button"
+            onClick={() => setHistoryOpen(true)}
+            title="Correction and approval history"
+          >
+            <Icon name="clock" size={14} />
+            History
+          </button>
           {metaQuery.data?.extractor === "fixture" && (
             <span
               className="extractor-tag"
@@ -974,13 +1201,38 @@ export function ReviewScreen() {
                                 <th className="r">Net kg</th>
                               </>
                             )}
+                            <th />
                           </tr>
                         </thead>
                         <tbody>
                           {lines.map((line) => (
                             <tr key={line.id}>
-                              <td className="num">{line.line_no}</td>
-                              <td>{line.description_raw}</td>
+                              <td className="num">
+                                <span
+                                  className={`conf-dot ${
+                                    line.status === "CORRECTED"
+                                      ? "ok"
+                                      : line.effective_conf < 0.55
+                                        ? "bad"
+                                        : line.effective_conf < 0.85
+                                          ? "warn"
+                                          : "ok"
+                                  }`}
+                                  title={`${line.verification_level} · confidence ${Math.round(
+                                    line.effective_conf * 100,
+                                  )}%`}
+                                  style={{ marginRight: 6 }}
+                                />
+                                {line.line_no}
+                              </td>
+                              <td>
+                                {line.description_raw}
+                                {line.status === "CORRECTED" && (
+                                  <span className="conf-tag" style={{ marginLeft: 6 }}>
+                                    edited
+                                  </span>
+                                )}
+                              </td>
                               {type === "INVOICE" && <td className="num">{line.hsn_code ?? "—"}</td>}
                               <td className="r num">
                                 {num(line.qty)} {line.uom ?? ""}
@@ -1000,6 +1252,16 @@ export function ReviewScreen() {
                                   </td>
                                 </>
                               )}
+                              <td className="r">
+                                <button
+                                  className="line-edit-btn"
+                                  type="button"
+                                  title="Correct this line"
+                                  onClick={() => setEditingLine(line)}
+                                >
+                                  <Icon name="edit" size={13} />
+                                </button>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -1118,6 +1380,13 @@ export function ReviewScreen() {
                 )
               )}
 
+              {isManager &&
+                (shipment.status === "READY" || shipment.status === "EXPORTED") && (
+                  <button className="btn" type="button" onClick={() => setReopenOpen(true)}>
+                    Reopen
+                  </button>
+                )}
+
               {shipment.status === "READY" && (
                 <button
                   className="btn btn-primary"
@@ -1144,7 +1413,55 @@ export function ReviewScreen() {
         </section>
       </div>
 
+      <HistoryDrawer
+        shipmentId={shipment.id}
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+      />
+
       {toast && <div className="toast">{toast}</div>}
+
+      {editingLine && (
+        <LineEditor
+          line={editingLine}
+          docType={
+            review.documents.find((document) => document.id === editingLine.document_id)?.type ??
+            "INVOICE"
+          }
+          busy={patchLine.isPending}
+          onClose={() => setEditingLine(null)}
+          onSave={(values) => patchLine.mutate({ lineId: editingLine.id, values })}
+        />
+      )}
+
+      {reopenOpen && (
+        <div className="modal-backdrop" onClick={() => setReopenOpen(false)}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <h2 style={{ fontSize: 16, fontWeight: 600 }}>Reopen this shipment?</h2>
+            <p style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 6, lineHeight: 1.5 }}>
+              The approval is voided and the shipment returns to review. Its export history is kept.
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+              <button className="btn" type="button" onClick={() => setReopenOpen(false)}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                type="button"
+                disabled={reopen.isPending}
+                onClick={() => reopen.mutate()}
+              >
+                {reopen.isPending ? (
+                  <Icon name="refresh" size={14} className="spin" />
+                ) : (
+                  <Icon name="refresh" size={14} />
+                )}
+                Reopen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {decision && (
         <div className="modal-backdrop" onClick={() => setDecision(null)}>

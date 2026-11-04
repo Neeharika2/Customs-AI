@@ -22,7 +22,8 @@ type IconName =
   | "spark"
   | "download"
   | "upload"
-  | "refresh";
+  | "refresh"
+  | "edit";
 
 const paths: Record<IconName, string> = {
   box: "M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5v-9Z M3.5 7.5 12 12l8.5-4.5 M12 12v9",
@@ -48,6 +49,7 @@ const paths: Record<IconName, string> = {
   download: "M12 3v12 M7 10l5 5 5-5 M4 21h16",
   upload: "M12 21V9 M7 14l5-5 5 5 M4 3h16",
   refresh: "M20 11a8 8 0 1 0-2.3 6.3 M20 4v7h-7",
+  edit: "M4 20h4L19 9l-4-4L4 16v4Z M13.5 6.5l4 4",
 };
 
 export function Icon({

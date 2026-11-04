@@ -50,6 +50,23 @@ test("executive uploads, reviews and submits; manager approves and exports", asy
   await page.getByRole("button", { name: /Review shipment|Open review/ }).click();
   await expect(page.locator(".review")).toBeVisible();
   await expect(page.getByText("Extracted data")).toBeVisible();
+
+  // Correct a line item and prove the checks rerun.
+  await page.locator(".line-edit-btn").first().click();
+  const lineModal = page.locator(".modal");
+  await lineModal.getByLabel("Quantity").fill("181");
+  await lineModal.getByRole("button", { name: "Save correction" }).click();
+  await expect(page.getByText(/open issues/)).toBeVisible({ timeout: 15_000 });
+
+  await page.locator(".line-edit-btn").first().click();
+  await lineModal.getByLabel("Quantity").fill("180");
+  await lineModal.getByRole("button", { name: "Save correction" }).click();
+  await expect(page.getByText("All checks clear")).toBeVisible({ timeout: 15_000 });
+
+  await page.getByRole("button", { name: "History" }).click();
+  await expect(page.getByText(/line 1 corrected/i).first()).toBeVisible();
+  await page.getByTitle("Close").click();
+
   await expect(page.getByRole("button", { name: /Confirm high-confidence/ })).toBeVisible({
     timeout: 20_000,
   });

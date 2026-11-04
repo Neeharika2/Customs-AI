@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from fastapi import APIRouter
 from sqlalchemy import select
@@ -34,6 +36,8 @@ from ..schemas import (
     FieldPatchIn,
     GateOut,
     LineItemOut,
+    LineItemPatchIn,
+    LineMutationOut,
     PageOut,
     ReviewOut,
     ShipmentOut,
@@ -112,6 +116,12 @@ def _line_out(line: LineItem) -> LineItemOut:
         net_weight_kg=float(line.net_weight_kg) if line.net_weight_kg is not None else None,
         matched_line_id=line.matched_line_id,
         match_score=line.match_score,
+        status=line.status,
+        verification_level=line.verification_level,
+        effective_conf=line.effective_conf,
+        page_idx=line.page_idx,
+        bbox=line.bbox,
+        quote=line.quote,
     )
 
 
@@ -307,6 +317,78 @@ def confirm_field(field_id: str, user: CurrentUser, db: DbSession) -> FieldMutat
         field=_field_out(field),
         gate=evaluate(db, shipment, for_export=False) if shipment else GateOut(ok=False, blockers=[]),
         check=_checks(db, shipment.id) if shipment else [],
+    )
+
+
+@router.patch("/line-items/{line_id}", response_model=LineMutationOut)
+def patch_line(
+    line_id: str, body: LineItemPatchIn, user: CurrentUser, db: DbSession
+) -> LineMutationOut:
+    line = db.get(LineItem, line_id)
+    if not line:
+        raise problem(404, "line_not_found", "Line item not found.")
+    shipment = db.get(Shipment, line.shipment_id)
+    if not shipment or shipment.org_id != user.org_id:
+        raise problem(404, "line_not_found", "Line item not found.")
+
+    changes = body.model_dump(exclude_unset=True)
+    reason = changes.pop("reason", None)
+    if not changes:
+        raise problem(422, "no_changes", "Change at least one value.")
+
+    # Numeric columns are Decimal in the model; convert at the boundary so the
+    # checks engine never sees a float multiplying a Decimal.
+    for key in {"qty", "unit_price", "amount", "gross_weight_kg", "net_weight_kg"}:
+        if key in changes and changes[key] is not None:
+            changes[key] = Decimal(str(changes[key]))
+
+    # Drop exact no-ops (e.g. 42.5000 vs 42.5) so the history only shows real edits.
+    actual: dict[str, object] = {}
+    for key, value in changes.items():
+        current = getattr(line, key)
+        if isinstance(current, Decimal) and isinstance(value, Decimal):
+            if current == value:
+                continue
+        elif current == value:
+            continue
+        actual[key] = value
+    if not actual:
+        raise problem(422, "no_changes", "Those values already match the document.")
+    changes = actual
+
+    old = {key: getattr(line, key) for key in changes}
+    for key, value in changes.items():
+        setattr(line, key, value)
+    line.status = FieldStatus.CORRECTED
+    line.effective_conf = 1.0
+    line.updated_by = user.id
+    new = {key: getattr(line, key) for key in changes}
+
+    db.add(
+        Correction(
+            line_item_id=line.id,
+            old_value=json.dumps(old, default=str),
+            new_value=json.dumps(new, default=str),
+            actor_id=user.id,
+            reason=reason,
+        )
+    )
+    _void_approval(db, shipment, user.id, f"line {line.line_no} edited")
+    audit(
+        db,
+        org_id=user.org_id,
+        actor_id=user.id,
+        action="line_item.corrected",
+        entity="line_item",
+        entity_id=line.id,
+        meta={"line_no": line.line_no, "changed": sorted(changes)},
+    )
+    db.commit()
+    run_checks(db, shipment.id)
+    return LineMutationOut(
+        line=_line_out(line),
+        gate=evaluate(db, shipment, for_export=False),
+        check=_checks(db, shipment.id),
     )
 
 

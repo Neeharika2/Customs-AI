@@ -139,6 +139,32 @@ export interface LineItemOut {
   net_weight_kg: number | null;
   matched_line_id: string | null;
   match_score: number | null;
+  status: FieldStatus;
+  verification_level: EvidenceLevel;
+  effective_conf: number;
+  page_idx: number;
+  bbox: { x0: number; y0: number; x1: number; y1: number } | null;
+  quote: string | null;
+}
+
+export interface LineMutation {
+  line: LineItemOut;
+  gate: Gate;
+  check: CheckOut[];
+}
+
+export interface ActivityItem {
+  id: string;
+  kind: "correction" | "approval" | "export" | "status";
+  at: string;
+  actor: string;
+  title: string;
+  detail: string;
+  reason: string | null;
+}
+
+export interface ActivityOut {
+  items: ActivityItem[];
 }
 
 export interface PageOut {
@@ -227,7 +253,13 @@ export interface SettingsData {
     id: string;
     name: string;
     version: number;
-    columns: { header: string; source: string; required?: boolean }[];
+    columns: {
+      header: string;
+      source: string;
+      required?: boolean;
+      format?: string | null;
+      join?: string | null;
+    }[];
   } | null;
   users: { email: string; role: string; active: boolean }[];
 }
@@ -376,6 +408,35 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ values }),
     }),
+  patchLine: (
+    lineId: string,
+    values: {
+      description_raw?: string;
+      hsn_code?: string;
+      qty?: number;
+      uom?: string;
+      unit_price?: number | null;
+      amount?: number | null;
+      gross_weight_kg?: number | null;
+      net_weight_kg?: number | null;
+      reason?: string;
+    },
+  ) => request<LineMutation>(`/line-items/${lineId}`, { method: "PATCH", body: JSON.stringify(values) }),
+  activity: (shipmentId: string) =>
+    request<ActivityOut>(`/shipments/${shipmentId}/activity`),
+  deleteDocument: (documentId: string) =>
+    request<void>(`/documents/${documentId}`, { method: "DELETE" }),
+  reprocessDocument: (documentId: string) =>
+    request<DocumentOut>(`/documents/${documentId}/reprocess`, { method: "POST" }),
+  saveTemplate: (
+    templateId: string,
+    name: string,
+    columns: { header: string; source: string; required?: boolean; format?: string | null; join?: string | null }[],
+  ) =>
+    request<{ id: string; name: string; version: number; columns: unknown[] }>(
+      `/export-templates/${templateId}`,
+      { method: "PUT", body: JSON.stringify({ name, columns }) },
+    ),
 };
 
 export function uploadDocument(

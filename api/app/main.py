@@ -11,7 +11,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from .config import settings
 from .db import Base, SessionLocal, engine
 from .models import UserSession
-from .routers import auth, documents, exports, manual, reports, review, settings as settings_router, shipments
+from .routers import activity, auth, documents, exports, manual, reports, review, settings as settings_router, shipments
 from .security import token_hash
 
 @asynccontextmanager
@@ -121,6 +121,7 @@ app.include_router(review.router)
 app.include_router(exports.router)
 app.include_router(reports.router)
 app.include_router(settings_router.router)
+app.include_router(activity.router)
 
 
 # Serve the built SPA when it exists (production image). In development Vite proxies /api.

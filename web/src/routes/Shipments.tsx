@@ -51,6 +51,8 @@ export function Shipments() {
   const [params, setParams] = useSearchParams();
   const status = params.get("status") ?? "";
   const qParam = params.get("q") ?? "";
+  const page = Math.max(1, Number(params.get("page") ?? "1") || 1);
+  const limit = 50;
   const [search, setSearch] = useState(qParam);
 
   useEffect(() => {
@@ -58,6 +60,7 @@ export function Shipments() {
       const next = new URLSearchParams(params);
       if (search.trim()) next.set("q", search.trim());
       else next.delete("q");
+      next.delete("page");
       if (next.toString() !== params.toString()) setParams(next, { replace: true });
     }, 250);
     return () => window.clearTimeout(timer);
@@ -70,8 +73,14 @@ export function Shipments() {
   }, [qParam]);
 
   const query = useQuery({
-    queryKey: ["shipments", status, qParam],
-    queryFn: () => api.shipments({ status: status || undefined, q: qParam || undefined }),
+    queryKey: ["shipments", status, qParam, page],
+    queryFn: () =>
+      api.shipments({
+        status: status || undefined,
+        q: qParam || undefined,
+        page,
+        limit,
+      }),
     placeholderData: (previous) => previous,
   });
 
@@ -84,6 +93,14 @@ export function Shipments() {
     const p = new URLSearchParams(params);
     if (next) p.set("status", next);
     else p.delete("status");
+    p.delete("page");
+    setParams(p, { replace: true });
+  }
+
+  function setPage(next: number) {
+    const p = new URLSearchParams(params);
+    if (next <= 1) p.delete("page");
+    else p.set("page", String(next));
     setParams(p, { replace: true });
   }
 
@@ -260,6 +277,34 @@ export function Shipments() {
           </table>
         )}
       </div>
+
+      {data && data.total > limit && (
+        <div className="pager">
+          <span>
+            Showing {(page - 1) * limit + 1}–{Math.min(page * limit, data.total)} of {data.total}
+          </span>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              className="btn btn-sm"
+              type="button"
+              disabled={page <= 1}
+              onClick={() => setPage(page - 1)}
+            >
+              <Icon name="arrow-left" size={13} />
+              Previous
+            </button>
+            <button
+              className="btn btn-sm"
+              type="button"
+              disabled={page * limit >= data.total}
+              onClick={() => setPage(page + 1)}
+            >
+              Next
+              <Icon name="arrow-right" size={13} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

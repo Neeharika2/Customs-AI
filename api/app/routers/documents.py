@@ -7,13 +7,24 @@ import uuid
 from PIL import Image, ImageOps
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, Response, UploadFile
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from ..config import settings
 from ..db import SessionLocal
 from ..deps import CurrentUser, DbSession, audit, problem
-from ..extract.pipeline import process_document
-from ..models import Document, DocumentStatus, DocumentType, Page, Shipment
+from ..checks.engine import run_checks
+from ..extract.pipeline import _derive_shipment_status, process_document
+from ..models import (
+    Check,
+    Document,
+    DocumentStatus,
+    DocumentType,
+    Field,
+    LineItem,
+    Page,
+    Shipment,
+    ShipmentStatus,
+)
 from ..schemas import DocumentOut, PageOut
 from ..services.storage import get_storage
 
@@ -26,9 +37,9 @@ MAGIC = [
 ]
 
 
-def _process(document_id: str) -> None:
+def _process(document_id: str, actor_id: str | None = None) -> None:
     with SessionLocal() as db:
-        process_document(db, document_id)
+        process_document(db, document_id, actor_id=actor_id)
 
 
 def _document(db, document_id: str, org_id: str) -> Document:
@@ -130,7 +141,7 @@ async def upload_document(
     db.commit()
     db.refresh(document)
 
-    background.add_task(_process, document.id)
+    background.add_task(_process, document.id, user.id)
     return DocumentOut(
         id=document.id,
         type=document.type,
@@ -139,6 +150,78 @@ async def upload_document(
         status=document.status,
         error_code=document.error_code,
         error_detail=document.error_detail,
+        created_at=document.created_at,
+    )
+
+
+@router.delete("/documents/{document_id}", status_code=204)
+def delete_document(document_id: str, user: CurrentUser, db: DbSession) -> Response:
+    document = _document(db, document_id, user.org_id)
+    shipment = db.get(Shipment, document.shipment_id)
+    if not shipment:
+        raise problem(404, "document_not_found", "Document not found.")
+    if shipment.status in {
+        ShipmentStatus.READY,
+        ShipmentStatus.EXPORTED,
+        ShipmentStatus.AWAITING_APPROVAL,
+    }:
+        raise problem(409, "locked", "Reopen or reject the shipment before removing a document.")
+
+    db.execute(delete(Field).where(Field.document_id == document.id))
+    db.execute(delete(LineItem).where(LineItem.document_id == document.id))
+    db.execute(delete(Check).where(Check.shipment_id == shipment.id))
+    db.delete(document)
+    audit(
+        db,
+        org_id=user.org_id,
+        actor_id=user.id,
+        action="document.deleted",
+        entity="document",
+        entity_id=document.id,
+        meta={"type": str(document.type), "file": document.file_name},
+    )
+    db.commit()
+    run_checks(db, shipment.id)
+    _derive_shipment_status(db, shipment.id)
+    return Response(status_code=204)
+
+
+@router.post("/documents/{document_id}/reprocess", response_model=DocumentOut)
+def reprocess_document(
+    document_id: str,
+    background: BackgroundTasks,
+    user: CurrentUser,
+    db: DbSession,
+) -> DocumentOut:
+    document = _document(db, document_id, user.org_id)
+    shipment = db.get(Shipment, document.shipment_id)
+    if not shipment:
+        raise problem(404, "document_not_found", "Document not found.")
+    if shipment.status in {ShipmentStatus.READY, ShipmentStatus.EXPORTED}:
+        raise problem(409, "locked", "Reopen the shipment before re-extracting.")
+
+    document.status = DocumentStatus.UPLOADED
+    document.error_code = None
+    document.error_detail = None
+    audit(
+        db,
+        org_id=user.org_id,
+        actor_id=user.id,
+        action="document.reprocess",
+        entity="document",
+        entity_id=document.id,
+        meta={"type": str(document.type)},
+    )
+    db.commit()
+    background.add_task(_process, document.id, user.id)
+    return DocumentOut(
+        id=document.id,
+        type=document.type,
+        file_name=document.file_name,
+        page_count=document.page_count,
+        status=document.status,
+        error_code=None,
+        error_detail=None,
         created_at=document.created_at,
     )
 

@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from ..deps import audit
 from ..models import (
     Document,
     DocumentStatus,
@@ -133,7 +134,9 @@ def _parse(document_type: DocumentType, lines: list[dict]) -> ParsedDocument:
     return parse_bl(lines)
 
 
-def process_document(db: Session, document_id: str, force: bool = False) -> None:
+def process_document(
+    db: Session, document_id: str, actor_id: str | None = None, force: bool = False
+) -> None:
     document = db.get(Document, document_id)
     if not document:
         return
@@ -179,6 +182,15 @@ def process_document(db: Session, document_id: str, force: bool = False) -> None
             document.status = DocumentStatus.NEEDS_MANUAL_ENTRY
             document.error_code = "no_text"
             document.error_detail = "No readable text layer. Enter this document manually."
+            audit(
+                db,
+                org_id=document.shipment.org_id,
+                actor_id=actor_id,
+                action="document.manual_entry",
+                entity="document",
+                entity_id=document.id,
+                meta={"type": str(document.type)},
+            )
             db.commit()
             _derive_shipment_status(db, document.shipment_id)
             return
@@ -239,6 +251,13 @@ def process_document(db: Session, document_id: str, force: bool = False) -> None
             )
 
         for line in parsed.lines:
+            line_bbox = bbox_for(data, line.page_idx, line.description or "")
+            source = page_source.get(line.page_idx, PageSource.NONE)
+            if source == PageSource.TEXT:
+                level = EvidenceLevel.EXACT if line_bbox else EvidenceLevel.CONTAINED
+            else:
+                level = EvidenceLevel.CLAIMED
+            confidence = round(min(EVIDENCE[level], 1.0) * (0.75 + 0.25 * 0.93), 3)
             db.add(
                 LineItem(
                     shipment_id=document.shipment_id,
@@ -252,12 +271,27 @@ def process_document(db: Session, document_id: str, force: bool = False) -> None
                     amount=line.amount,
                     gross_weight_kg=line.gross_weight,
                     net_weight_kg=line.net_weight,
+                    status=FieldStatus.SUGGESTED,
+                    verification_level=level,
+                    effective_conf=confidence,
+                    page_idx=line.page_idx,
+                    bbox=line_bbox,
+                    quote=line.quote,
                 )
             )
 
         document.status = DocumentStatus.EXTRACTED
         document.error_code = None
         document.error_detail = None
+        audit(
+            db,
+            org_id=document.shipment.org_id,
+            actor_id=actor_id,
+            action="document.extracted",
+            entity="document",
+            entity_id=document.id,
+            meta={"type": str(document.type), "fields": len(parsed.fields), "lines": len(parsed.lines)},
+        )
         db.commit()
         _derive_shipment_status(db, document.shipment_id)
 

@@ -4,6 +4,44 @@ import { Icon } from "../components/Icon";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 
+type TemplateColumn = {
+  header: string;
+  source: string;
+  required?: boolean;
+  format?: string | null;
+  join?: string | null;
+};
+
+const SOURCE_OPTIONS = [
+  ["invoice_number", "Invoice number"],
+  ["invoice_date", "Invoice date"],
+  ["supplier_name", "Supplier"],
+  ["buyer_name", "Buyer"],
+  ["currency", "Currency"],
+  ["incoterm", "Incoterm"],
+  ["invoice_total", "Invoice total"],
+  ["freight", "Freight"],
+  ["insurance", "Insurance"],
+  ["discount", "Discount"],
+  ["gross_weight_kg", "Gross weight"],
+  ["net_weight_kg", "Net weight"],
+  ["packages", "Packages"],
+  ["package_type", "Package type"],
+  ["container_numbers", "Container numbers"],
+  ["bl_number", "B/L number"],
+  ["bl_date", "B/L date"],
+  ["consignee", "Consignee"],
+  ["notify_party", "Notify party"],
+  ["vessel_name", "Vessel"],
+  ["port_of_loading", "Port of loading"],
+  ["port_of_discharge", "Port of discharge"],
+  ["item.description", "Line description"],
+  ["item.hsn_code", "Line HSN"],
+  ["item.qty", "Line quantity"],
+  ["item.unit_price", "Line unit price"],
+  ["item.amount", "Line amount"],
+] as const;
+
 export function Settings() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -11,6 +49,8 @@ export function Settings() {
   const [value, setValue] = useState("0.01");
   const [retention, setRetention] = useState("180");
   const [toast, setToast] = useState<string | null>(null);
+  const [templateName, setTemplateName] = useState("");
+  const [columns, setColumns] = useState<TemplateColumn[]>([]);
 
   const query = useQuery({ queryKey: ["settings"], queryFn: api.settings, enabled: user?.role === "MANAGER" });
 
@@ -19,6 +59,18 @@ export function Settings() {
       setWeight(String(query.data.weight_tol_pct));
       setValue(String(query.data.value_tol));
       setRetention(String(query.data.retention_days));
+      if (query.data.template) {
+        setTemplateName(query.data.template.name);
+        setColumns(
+          query.data.template.columns.map((column) => ({
+            header: column.header,
+            source: column.source,
+            required: column.required ?? false,
+            format: column.format ?? "",
+            join: (column as { join?: string }).join ?? "",
+          })),
+        );
+      }
     }
   }, [query.data]);
 
@@ -39,6 +91,34 @@ export function Settings() {
       window.setTimeout(() => setToast(null), 3000);
     },
   });
+
+  const saveTemplate = useMutation({
+    mutationFn: () => {
+      const template = query.data?.template;
+      if (!template) throw new Error("No template");
+      return api.saveTemplate(template.id, templateName.trim(), columns);
+    },
+    onSuccess: () => {
+      setToast("Template saved as a new version");
+      void queryClient.invalidateQueries({ queryKey: ["settings"] });
+      window.setTimeout(() => setToast(null), 2500);
+    },
+    onError: (error) => {
+      setToast(error instanceof ApiError ? error.detail : "Could not save the template");
+      window.setTimeout(() => setToast(null), 3500);
+    },
+  });
+
+  const headers = columns.map((column) => column.header.trim().toLowerCase()).filter(Boolean);
+  const hasRequiredSources =
+    columns.some((column) => column.source === "invoice_number") &&
+    columns.some((column) => column.source === "item.description");
+  const templateValid =
+    columns.length > 0 &&
+    headers.length === columns.length &&
+    new Set(headers).size === headers.length &&
+    columns.every((column) => column.header.trim() && column.source) &&
+    hasRequiredSources;
 
   if (user?.role !== "MANAGER") {
     return (
@@ -164,32 +244,147 @@ export function Settings() {
         <div className="card-head">
           <h2>Export template</h2>
           <span style={{ fontSize: 11.5, color: "var(--muted)" }}>
-            {data.template ? `${data.template.name} · v${data.template.version}` : "No template"}
+            {data.template ? `v${data.template.version} · saving creates a new version` : "No template"}
           </span>
         </div>
-        {data.template ? (
-          <div style={{ padding: 14, display: "flex", flexWrap: "wrap", gap: 5 }}>
-            {data.template.columns.map((column) => (
-              <span
-                key={column.header}
-                style={{
-                  fontSize: 11,
-                  border: "1px solid var(--border)",
-                  borderRadius: 5,
-                  padding: "3px 7px",
-                  color: "var(--ink-2)",
-                  background: "#fcfcfa",
-                }}
-              >
-                {column.header}
-                {column.required ? <span style={{ color: "var(--block-fg)" }}> *</span> : null}
-              </span>
+        <div style={{ padding: 14 }}>
+          <div className="field" style={{ maxWidth: 360, marginBottom: 12 }}>
+            <label className="label">Template name</label>
+            <input
+              className="input"
+              value={templateName}
+              onChange={(event) => setTemplateName(event.target.value)}
+            />
+          </div>
+
+          <div className="template-table">
+            <div className="template-row template-head">
+              <span>Column header</span>
+              <span>Source</span>
+              <span>Format</span>
+              <span>Req.</span>
+              <span />
+            </div>
+            {columns.map((column, index) => (
+              <div className="template-row" key={index}>
+                <input
+                  className="input"
+                  value={column.header}
+                  onChange={(event) =>
+                    setColumns((current) =>
+                      current.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, header: event.target.value } : item,
+                      ),
+                    )
+                  }
+                />
+                <select
+                  className="select"
+                  value={column.source}
+                  onChange={(event) =>
+                    setColumns((current) =>
+                      current.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, source: event.target.value } : item,
+                      ),
+                    )
+                  }
+                >
+                  {SOURCE_OPTIONS.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  className="input num"
+                  placeholder="—"
+                  value={column.format ?? ""}
+                  onChange={(event) =>
+                    setColumns((current) =>
+                      current.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, format: event.target.value } : item,
+                      ),
+                    )
+                  }
+                />
+                <input
+                  type="checkbox"
+                  checked={Boolean(column.required)}
+                  onChange={(event) =>
+                    setColumns((current) =>
+                      current.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, required: event.target.checked } : item,
+                      ),
+                    )
+                  }
+                />
+                <button
+                  className="btn btn-ghost btn-sm"
+                  type="button"
+                  title="Remove column"
+                  onClick={() =>
+                    setColumns((current) => current.filter((_, itemIndex) => itemIndex !== index))
+                  }
+                >
+                  <Icon name="x" size={13} />
+                </button>
+              </div>
             ))}
           </div>
-        ) : null}
-        <div style={{ padding: "10px 14px", borderTop: "1px solid var(--border)", fontSize: 11, color: "var(--muted)" }}>
-          The mapping is data, not code. Replacing it with the filing software's real template does
-          not require a release.
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 10,
+              marginTop: 12,
+            }}
+          >
+            <button
+              className="btn btn-sm"
+              type="button"
+              onClick={() =>
+                setColumns((current) => [
+                  ...current,
+                  { header: "", source: "item.description", required: false, format: "" },
+                ])
+              }
+            >
+              <Icon name="plus" size={13} />
+              Add column
+            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {!templateValid && (
+                <span style={{ fontSize: 11, color: "var(--block-fg)" }}>
+                  Headers must be unique; invoice number and line description are required.
+                </span>
+              )}
+              <button
+                className="btn btn-primary btn-sm"
+                type="button"
+                disabled={!templateValid || saveTemplate.isPending || !data.template}
+                onClick={() => saveTemplate.mutate()}
+              >
+                {saveTemplate.isPending ? (
+                  <Icon name="refresh" size={13} className="spin" />
+                ) : (
+                  <Icon name="check" size={13} />
+                )}
+                Save template
+              </button>
+            </div>
+          </div>
+        </div>
+        <div
+          style={{
+            padding: "10px 14px",
+            borderTop: "1px solid var(--border)",
+            fontSize: 11,
+            color: "var(--muted)",
+          }}
+        >
+          The mapping is data, not code. Existing exports keep the template version they used.
         </div>
       </div>
 

@@ -351,6 +351,20 @@ class LineItem(Base):
     net_weight_kg: Mapped[Decimal | None] = mapped_column(Numeric(14, 3))
     matched_line_id: Mapped[str | None] = mapped_column(ForeignKey("line_item.id"))
     match_score: Mapped[float | None] = mapped_column(Float)
+    status: Mapped[FieldStatus] = mapped_column(
+        enum(FieldStatus), default=FieldStatus.SUGGESTED, nullable=False
+    )
+    verification_level: Mapped[EvidenceLevel] = mapped_column(
+        enum(EvidenceLevel), default=EvidenceLevel.NONE, nullable=False
+    )
+    effective_conf: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    page_idx: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    bbox: Mapped[dict | None] = mapped_column(JSON)
+    quote: Mapped[str | None] = mapped_column(Text)
+    updated_by: Mapped[str | None] = mapped_column(ForeignKey("user.id"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
 
 
 class Check(Base):
@@ -399,10 +413,19 @@ class CheckResolution(Base):
 
 class Correction(Base):
     __tablename__ = "correction"
+    __table_args__ = (
+        CheckConstraint(
+            "(field_id IS NOT NULL) <> (line_item_id IS NOT NULL)",
+            name="ck_correction_single_target",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    field_id: Mapped[str] = mapped_column(
+    field_id: Mapped[str | None] = mapped_column(
         ForeignKey("field.id", ondelete="CASCADE"), index=True
+    )
+    line_item_id: Mapped[str | None] = mapped_column(
+        ForeignKey("line_item.id", ondelete="CASCADE"), index=True
     )
     old_value: Mapped[str | None] = mapped_column(Text)
     new_value: Mapped[str | None] = mapped_column(Text)

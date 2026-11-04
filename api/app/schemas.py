@@ -184,6 +184,30 @@ class LineItemOut(BaseModel):
     net_weight_kg: float | None
     matched_line_id: str | None
     match_score: float | None
+    status: FieldStatus
+    verification_level: EvidenceLevel
+    effective_conf: float
+    page_idx: int
+    bbox: dict | None
+    quote: str | None
+
+
+class LineItemPatchIn(BaseModel):
+    description_raw: str | None = Field(default=None, min_length=1, max_length=500)
+    hsn_code: str | None = Field(default=None, max_length=12)
+    qty: float | None = Field(default=None, gt=0)
+    uom: str | None = Field(default=None, max_length=16)
+    unit_price: float | None = Field(default=None, ge=0)
+    amount: float | None = Field(default=None, ge=0)
+    gross_weight_kg: float | None = Field(default=None, ge=0)
+    net_weight_kg: float | None = Field(default=None, ge=0)
+    reason: str | None = Field(default=None, max_length=400)
+
+
+class LineMutationOut(BaseModel):
+    line: LineItemOut
+    gate: GateOut
+    check: list[CheckOut] = []
 
 
 class PageOut(BaseModel):

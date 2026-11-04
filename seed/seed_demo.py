@@ -18,9 +18,11 @@ from sqlalchemy import delete, select  # noqa: E402
 
 from app.checks.engine import run_checks  # noqa: E402
 from app.db import SessionLocal  # noqa: E402
+from app.deps import audit  # noqa: E402
 from app.extract.pipeline import normalise, process_document  # noqa: E402
 from app.models import (  # noqa: E402
     Approval,
+    AuditEvent,
     Check,
     CheckResolution,
     Correction,
@@ -44,7 +46,9 @@ ROOT = pathlib.Path(__file__).resolve().parent
 MANIFEST = ROOT / "output" / "manifest.json"
 
 
-def attach(db, shipment: Shipment, doc_type: str, path: pathlib.Path) -> Document:
+def attach(
+    db, shipment: Shipment, doc_type: str, path: pathlib.Path, actor_id: str | None = None
+) -> Document:
     data = path.read_bytes()
     digest = hashlib.sha256(data).hexdigest()
     existing = db.scalar(
@@ -70,6 +74,16 @@ def attach(db, shipment: Shipment, doc_type: str, path: pathlib.Path) -> Documen
     db.add(document)
     db.commit()
     db.refresh(document)
+    audit(
+        db,
+        org_id=shipment.org_id,
+        actor_id=actor_id,
+        action="document.uploaded",
+        entity="document",
+        entity_id=document.id,
+        meta={"type": doc_type},
+    )
+    db.commit()
     return document
 
 
@@ -128,6 +142,12 @@ def main() -> None:
     with SessionLocal() as db:
         org = db.scalar(select(Org).where(Org.name == "Demo Freight"))
         assert org is not None
+        exec_user = db.scalar(select(User).where(User.email == "exec@demo.local"))
+        manager = db.scalar(select(User).where(User.email == "manager@demo.local"))
+
+        # Demo-only: clear activity so a re-seed does not show history for deleted rows.
+        db.execute(delete(AuditEvent).where(AuditEvent.org_id == org.id))
+        db.commit()
 
         # Keep the demo list clean: remove shipments created by manual testing or E2E runs.
         demo_refs = set(manifest)
@@ -169,12 +189,14 @@ def main() -> None:
             db.commit()
 
             for doc_type, path in documents.items():
-                document = attach(db, shipment, doc_type, pathlib.Path(path))
-                process_document(db, document.id)
+                document = attach(
+                    db, shipment, doc_type, pathlib.Path(path),
+                    actor_id=exec_user.id if exec_user else None,
+                )
+                process_document(
+                    db, document.id, actor_id=exec_user.id if exec_user else None
+                )
             print(f"{ref}: {len(documents)} documents processed")
-
-        exec_user = db.scalar(select(User).where(User.email == "exec@demo.local"))
-        manager = db.scalar(select(User).where(User.email == "manager@demo.local"))
 
         # A clean shipment waiting for the manager, with a little correction history
         # so the accuracy report is not empty on first load.

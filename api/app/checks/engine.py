@@ -269,7 +269,8 @@ def run_checks(db: Session, shipment_id: str) -> list[Check]:
                 message=(
                     f"Gross weight agrees across {len(weights)} documents"
                     if passed
-                    else " · ".join(f"{k.lower()} {v:,.0f} kg" for k, v in weights.items())
+                    else "Gross weight: "
+                    + " · ".join(f"{k.lower()} {v:,.0f} kg" for k, v in weights.items())
                     + f" — difference {delta:,.0f} kg ({pct:.2f}%)"
                 ),
                 field_keys=["gross_weight_kg"],

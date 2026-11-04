@@ -1,9 +1,12 @@
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
 import { useAuth } from "./lib/auth";
+import { ExportScreen } from "./routes/Export";
 import { Login } from "./routes/Login";
 import { NewShipment } from "./routes/NewShipment";
 import { Placeholder } from "./routes/Placeholder";
+import { Reports } from "./routes/Reports";
+import { Settings } from "./routes/Settings";
 import { ShipmentDetail } from "./routes/ShipmentDetail";
 import { ReviewScreen } from "./routes/Review";
 import { Shipments } from "./routes/Shipments";
@@ -31,36 +34,9 @@ export function App() {
           <Route path="/shipments/new" element={<NewShipment />} />
           <Route path="/shipments/:id" element={<ShipmentDetail />} />
           <Route path="/shipments/:id/review" element={<ReviewScreen />} />
-          <Route
-            path="/shipments/:id/export"
-            element={
-              <Placeholder
-                title="Export"
-                description="Column-mapped CSV export with the gate checklist and a preview of exactly what will be downloaded."
-                phase="Phase 6"
-              />
-            }
-          />
-          <Route
-            path="/reports"
-            element={
-              <Placeholder
-                title="Reports"
-                description="Correction rate by field and supplier, first-pass acceptance, and the issues that block exports."
-                phase="Phase 6"
-              />
-            }
-          />
-          <Route
-            path="/settings"
-            element={
-              <Placeholder
-                title="Settings"
-                description="Tolerances, export templates, retention and users. Manager only."
-                phase="Phase 6"
-              />
-            }
-          />
+          <Route path="/shipments/:id/export" element={<ExportScreen />} />
+          <Route path="/reports" element={<Reports />} />
+          <Route path="/settings" element={<Settings />} />
           <Route
             path="*"
             element={

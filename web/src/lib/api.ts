@@ -176,6 +176,78 @@ export interface FieldMutation {
   check: CheckOut[];
 }
 
+export interface ExportPreview {
+  template: { id: string; name: string; version: number };
+  headers: string[];
+  rows: string[][];
+  total_rows: number;
+  gate: Gate;
+  shipment_status: ShipmentStatus;
+  shipment_ref: string;
+  existing_export: {
+    id: string;
+    created_at: string;
+    row_count: number;
+    url: string;
+  } | null;
+}
+
+export interface ExportResult {
+  export_id: string;
+  url: string;
+  row_count: number;
+  content_hash: string;
+}
+
+export interface ReportField {
+  key: string;
+  extracted: number;
+  corrected: number;
+  correction_rate: number;
+  avg_confidence: number;
+  sufficient: boolean;
+}
+
+export interface ReportSupplier {
+  supplier: string;
+  shipments: number;
+  fields: number;
+  corrected: number;
+  correction_rate: number;
+  manual_documents: number;
+  sufficient: boolean;
+}
+
+export interface SettingsData {
+  org_name: string;
+  weight_tol_pct: number;
+  value_tol: number;
+  retention_days: number;
+  template: {
+    id: string;
+    name: string;
+    version: number;
+    columns: { header: string; source: string; required?: boolean }[];
+  } | null;
+  users: { email: string; role: string; active: boolean }[];
+}
+
+export interface ReportOverview {
+  totals: {
+    shipments: number;
+    documents: number;
+    fields: number;
+    corrections: number;
+    manual_documents: number;
+    manual_rate: number;
+    first_pass: number;
+    evidence_coverage: number;
+  };
+  fields: ReportField[];
+  suppliers: ReportSupplier[];
+  small_sample: number;
+}
+
 export class ApiError extends Error {
   status: number;
   code: string;
@@ -253,6 +325,17 @@ export const api = {
   suppliers: () => request<Supplier[]>("/suppliers"),
   meta: () => request<Meta>("/meta"),
   review: (id: string) => request<Review>(`/shipments/${id}/review`),
+  exportPreview: (id: string) =>
+    request<ExportPreview>(`/shipments/${id}/export/preview`),
+  createExport: (id: string) =>
+    request<ExportResult>(`/shipments/${id}/export`, { method: "POST" }),
+  reports: () => request<ReportOverview>("/reports/overview"),
+  settings: () => request<SettingsData>("/settings"),
+  saveSettings: (body: {
+    weight_tol_pct: number;
+    value_tol: number;
+    retention_days: number;
+  }) => request<SettingsData>("/settings", { method: "PUT", body: JSON.stringify(body) }),
   patchField: (fieldId: string, value: string, reason?: string) =>
     request<FieldMutation>(`/fields/${fieldId}`, {
       method: "PATCH",

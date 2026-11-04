@@ -10,7 +10,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from .config import settings
 from .db import Base, SessionLocal, engine
 from .models import UserSession
-from .routers import auth, documents, manual, review, shipments
+from .routers import auth, documents, exports, manual, reports, review, settings as settings_router, shipments
 from .security import token_hash
 
 app = FastAPI(title="Customs-AI", version="0.1.0", docs_url="/api/docs",
@@ -105,6 +105,9 @@ app.include_router(shipments.router)
 app.include_router(documents.router)
 app.include_router(manual.router)
 app.include_router(review.router)
+app.include_router(exports.router)
+app.include_router(reports.router)
+app.include_router(settings_router.router)
 
 
 # Serve the built SPA when it exists (production image). In development Vite proxies /api.

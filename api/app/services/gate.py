@@ -63,19 +63,25 @@ def evaluate(db: Session, shipment: Shipment, for_export: bool = False) -> GateO
     unconfirmed = [
         f for f in fields if f.key in REQUIRED_KEYS and f.status == FieldStatus.SUGGESTED
     ]
-    for field in unconfirmed[:12]:
+    # Group by key: "supplier" appearing on three documents is one decision, not three.
+    grouped: dict[str, list[Field]] = {}
+    for field in unconfirmed:
+        grouped.setdefault(field.key, []).append(field)
+    for index, (key, group) in enumerate(grouped.items()):
+        if index >= 8:
+            blockers.append(
+                GateBlocker(
+                    code="FIELDS_REMAINING",
+                    message=f"{len(grouped) - 8} more field groups need confirmation",
+                )
+            )
+            break
+        suffix = f" ({len(group)} documents)" if len(group) > 1 else ""
         blockers.append(
             GateBlocker(
                 code="FIELD_UNCONFIRMED",
-                message=f"{LABELS.get(field.key, field.key)} needs confirmation",
-                field_id=field.id,
-            )
-        )
-    if len(unconfirmed) > 12:
-        blockers.append(
-            GateBlocker(
-                code="FIELDS_REMAINING",
-                message=f"{len(unconfirmed) - 12} more fields need confirmation",
+                message=f"{LABELS.get(key, key)} needs confirmation{suffix}",
+                field_id=group[0].id,
             )
         )
 
@@ -122,7 +128,7 @@ def evaluate(db: Session, shipment: Shipment, for_export: bool = False) -> GateO
             )
 
     if for_export:
-        if shipment.status != ShipmentStatus.READY:
+        if shipment.status not in {ShipmentStatus.READY, ShipmentStatus.EXPORTED}:
             blockers.append(
                 GateBlocker(code="NOT_APPROVED", message="Shipment has not been approved")
             )

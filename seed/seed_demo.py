@@ -17,18 +17,23 @@ from sqlalchemy import delete, select  # noqa: E402
 
 from app.checks.engine import run_checks  # noqa: E402
 from app.db import SessionLocal  # noqa: E402
-from app.extract.pipeline import process_document  # noqa: E402
+from app.extract.pipeline import normalise, process_document  # noqa: E402
 from app.models import (  # noqa: E402
+    Approval,
     Check,
+    CheckResolution,
+    Correction,
     Document,
     DocumentStatus,
     DocumentType,
+    Export,
     Field,
     FieldStatus,
     LineItem,
     Org,
     Shipment,
     ShipmentStatus,
+    User,
 )
 from app.seed import main as seed_base  # noqa: E402
 from app.services.gate import evaluate  # noqa: E402
@@ -70,8 +75,50 @@ def attach(db, shipment: Shipment, doc_type: str, path: pathlib.Path) -> Documen
 def confirm_all(db, shipment: Shipment) -> None:
     fields = db.scalars(select(Field).where(Field.shipment_id == shipment.id)).all()
     for field in fields:
+        if field.status == FieldStatus.CORRECTED:
+            continue
         field.status = FieldStatus.CONFIRMED
         field.effective_conf = max(field.effective_conf, 0.99)
+
+
+def seed_correction(
+    db,
+    shipment: Shipment,
+    doc_type: DocumentType,
+    key: str,
+    new_value: str,
+    actor: User,
+    reason: str,
+) -> None:
+    document_ids = [
+        d.id for d in shipment.documents if d.type == doc_type
+    ]
+    if not document_ids:
+        return
+    field = db.scalar(
+        select(Field).where(
+            Field.shipment_id == shipment.id,
+            Field.key == key,
+            Field.document_id.in_(document_ids),
+        )
+    )
+    if not field:
+        return
+    old = field.value_raw
+    field.value_raw = new_value
+    field.value_norm = normalise(key, new_value)
+    field.status = FieldStatus.CORRECTED
+    field.effective_conf = 1.0
+    field.updated_by = actor.id
+    db.add(
+        Correction(
+            field_id=field.id,
+            old_value=old,
+            new_value=new_value,
+            actor_id=actor.id,
+            reason=reason,
+        )
+    )
 
 
 def main() -> None:
@@ -89,6 +136,9 @@ def main() -> None:
                 continue
 
             # Re-seeding: remove previous derived rows in FK-safe order.
+            db.execute(delete(Export).where(Export.shipment_id == shipment.id))
+            db.execute(delete(Approval).where(Approval.shipment_id == shipment.id))
+            db.execute(delete(CheckResolution).where(CheckResolution.shipment_id == shipment.id))
             db.execute(delete(Field).where(Field.shipment_id == shipment.id))
             db.execute(delete(LineItem).where(LineItem.shipment_id == shipment.id))
             db.execute(delete(Check).where(Check.shipment_id == shipment.id))
@@ -107,14 +157,32 @@ def main() -> None:
                 process_document(db, document.id)
             print(f"{ref}: {len(documents)} documents processed")
 
-        # A clean shipment waiting for the manager.
+        exec_user = db.scalar(select(User).where(User.email == "exec@demo.local"))
+        manager = db.scalar(select(User).where(User.email == "manager@demo.local"))
+
+        # A clean shipment waiting for the manager, with a little correction history
+        # so the accuracy report is not empty on first load.
         for ref, status in [("SHP-24818", ShipmentStatus.READY),
                             ("SHP-24819", ShipmentStatus.AWAITING_APPROVAL)]:
             shipment = db.scalar(
                 select(Shipment).where(Shipment.org_id == org.id, Shipment.ref == ref)
             )
-            if not shipment:
+            if not shipment or not exec_user or not manager:
                 continue
+            if ref == "SHP-24818":
+                seed_correction(
+                    db, shipment, DocumentType.BL, "vessel_name", "MSC ARIA", exec_user,
+                    "Aligned with the carrier's B/L wording",
+                )
+                seed_correction(
+                    db, shipment, DocumentType.INVOICE, "package_type", "Cartons", exec_user,
+                    "Packing description clarified with the supplier",
+                )
+            if ref == "SHP-24819":
+                seed_correction(
+                    db, shipment, DocumentType.BL, "port_of_loading", "Ningbo, China",
+                    manager, "Added country for the filing description",
+                )
             confirm_all(db, shipment)
             db.commit()
             run_checks(db, shipment.id)

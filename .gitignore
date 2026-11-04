@@ -14,3 +14,7 @@ seed/output/
 uploads/
 web/src/lib/types.gen.ts.bak
 .DS_Store
+*.tsbuildinfo
+web/test-results/
+web/playwright-report/
+web/tsconfig.tsbuildinfo

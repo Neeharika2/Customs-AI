@@ -52,28 +52,36 @@ export function AppShell() {
           <span>Shipments</span>
         </NavLink>
 
-        <NavLink
-          to="/reports"
-          className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}
-        >
-          <Icon name="chart" size={17} />
-          <span>Reports</span>
-        </NavLink>
+        {user.role === "MANAGER" && (
+          <NavLink
+            to="/reports"
+            className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}
+          >
+            <Icon name="chart" size={17} />
+            <span>Reports</span>
+          </NavLink>
+        )}
 
-        <div className="nav-label">Workspace</div>
-        <NavLink
-          to="/settings"
-          className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}
-        >
-          <Icon name="settings" size={17} />
-          <span>Settings</span>
-        </NavLink>
+        {user.role === "MANAGER" && (
+          <>
+            <div className="nav-label">Workspace</div>
+            <NavLink
+              to="/settings"
+              className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}
+            >
+              <Icon name="settings" size={17} />
+              <span>Settings</span>
+            </NavLink>
+          </>
+        )}
 
         <div className="sidebar-foot">
           <button
             type="button"
             className="user-chip"
-            onClick={() => navigate("/settings")}
+            onClick={() => {
+              if (user.role === "MANAGER") navigate("/settings");
+            }}
             title={`${user.email} · ${user.role === "MANAGER" ? "Manager" : "Executive"}`}
           >
             <div className="avatar">{initials(user.email.split("@")[0].replace(".", " "))}</div>

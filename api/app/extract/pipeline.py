@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..deps import audit
 from ..models import (
     Document,
@@ -26,7 +27,7 @@ from ..models import (
 )
 from ..services.render import bbox_for, page_lines, render_pdf
 from ..services.storage import get_storage
-from . import vertex
+from . import ai
 from .parser import ParsedDocument, parse_bl, parse_invoice, parse_packing
 
 PROMPT_VERSION = "fixture-v1"
@@ -175,8 +176,35 @@ def process_document(
             else:
                 payloads.append({"page": page.idx, "words": [], "text": ""})
 
-        lines = page_lines(payloads)
-        parsed = _parse(document.type, lines)
+        use_live = ai.configured()
+        model_meta: dict = {}
+        prompt_version = PROMPT_VERSION
+        schema_version = SCHEMA_VERSION
+        if use_live:
+            try:
+                images = [storage.get(page.image_key) for page in pages]
+                payload, model_meta = ai.extract(document.type, images)
+                parsed = ai.to_parsed(payload, document.type)
+                prompt_version = "ai-v1"
+            except Exception as exc:  # provider/transport/schema failure
+                document.status = DocumentStatus.NEEDS_MANUAL_ENTRY
+                document.error_code = "ai_error"
+                document.error_detail = str(exc)[:400]
+                audit(
+                    db,
+                    org_id=document.shipment.org_id,
+                    actor_id=actor_id,
+                    action="document.manual_entry",
+                    entity="document",
+                    entity_id=document.id,
+                    meta={"type": str(document.type), "reason": "ai_error"},
+                )
+                db.commit()
+                _derive_shipment_status(db, document.shipment_id)
+                return
+        else:
+            lines = page_lines(payloads)
+            parsed = _parse(document.type, lines)
 
         if not parsed.lines and not any(f.value for f in parsed.fields):
             document.status = DocumentStatus.NEEDS_MANUAL_ENTRY
@@ -201,13 +229,13 @@ def process_document(
 
         run = ExtractionRun(
             document_id=document.id,
-            model_id="fixture-text-v1" if not vertex.is_configured() else "vertex",
-            prompt_version=PROMPT_VERSION,
-            schema_version=SCHEMA_VERSION,
+            model_id=model_meta.get("model_id", "fixture-text-v1"),
+            prompt_version=prompt_version,
+            schema_version=schema_version,
             content_sha256=document.sha256,
             status=RunStatus.SUCCESS,
-            tokens_in=0,
-            tokens_out=0,
+            tokens_in=int(model_meta.get("tokens_in", 0)),
+            tokens_out=int(model_meta.get("tokens_out", 0)),
             cost_paise=0,
             latency_ms=0,
         )

@@ -50,10 +50,10 @@ Open **SHP-24811** first. The weight warning is already there.
 | API | FastAPI, Pydantic v2, SQLAlchemy 2.0, Alembic |
 | Database | PostgreSQL 16 |
 | Documents | PyMuPDF (render + word-level boxes), Pillow |
-| AI | Vertex AI Gemini adapter; deterministic fixture extractor locally |
+| AI | Live Gemini adapter wired (`AI_BACKEND=developer` for synthetic, `vertex` for production); deterministic fixture default |
 | Storage | S3 (`ap-south-1`) in production, local disk for development |
 | Web | React 19, TypeScript, Vite, custom CSS design system |
-| Tests | pytest (31), Playwright (3 end-to-end paths) |
+| Tests | pytest (35), Playwright (3 end-to-end paths) |
 
 No Docker is required for local development: `scripts/dev_db.py` runs a bundled PostgreSQL binary.
 
@@ -84,12 +84,12 @@ Open **http://localhost:5173**.
 ## Tests
 
 ```bash
-cd api && uv run pytest -q          # 31 backend tests
+cd api && uv run pytest -q          # 35 backend tests
 cd web && pnpm test:e2e             # upload → review → approve → export, manual entry, blocked export
 cd api && uv run python ../eval/run.py
 ```
 
-The evaluation harness compares 260 extracted fields across 24 synthetic documents against a generated golden set:
+The evaluation harness compares 260 extracted fields across 24 synthetic documents against a generated golden set. The default run uses the fixture extractor; set `AI_BACKEND=developer` and a Gemini key to run the same harness through a live model on synthetic documents only.
 
 ```
 fields compared 260 · exact match 260/260 (100.0%)
@@ -120,7 +120,7 @@ deployment.md   runbook
 
 | Real | Not in this slice |
 |---|---|
-| Upload, validation, rendering, evidence | Vertex AI extraction without credentials (adapter present) |
+| Upload, validation, rendering, evidence | Live model run without a key (adapter wired; fixture default) |
 | 13 cross-document checks and the gate | Durable job queue (extraction runs as an in-process background task) |
 | Corrections, approvals, audit trail, line-item edits | Scheduled retention job (CLI exists) |
 | Configurable CSV export | Excel `.xlsx` — waiting on the client's real template |

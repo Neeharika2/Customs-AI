@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     s3_access_key_id: str = ""
     s3_secret_access_key: str = ""
 
+    # fixture = deterministic local parser; developer = Gemini API key (synthetic demo only);
+    # vertex = production path with regional processing and enterprise terms.
+    ai_backend: str = "fixture"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
     google_cloud_project: str = ""
     vertex_location: str = "asia-south1"
     vertex_model: str = ""

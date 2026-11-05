@@ -823,13 +823,21 @@ export function ReviewScreen() {
             <Icon name="clock" size={14} />
             History
           </button>
-          {metaQuery.data?.extractor === "fixture" && (
+          {metaQuery.data?.extractor === "fixture" ? (
             <span
               className="extractor-tag"
-              title="Rule-based fixture extractor. Vertex AI is used when GOOGLE_CLOUD_PROJECT and VERTEX_MODEL are configured."
+              title="Rule-based fixture extractor. Set AI_BACKEND and a model key for live extraction."
             >
               <Icon name="spark" size={12} />
               Demo extractor
+            </span>
+          ) : (
+            <span
+              className="extractor-tag"
+              title={`Live extraction via ${metaQuery.data?.extractor} · ${metaQuery.data?.model}`}
+            >
+              <Icon name="spark" size={12} />
+              Live model
             </span>
           )}
           <button

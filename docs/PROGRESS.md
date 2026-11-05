@@ -9,7 +9,7 @@ The core build and the core-completeness slice are done and tested. The TDD, PDF
 | Area | State |
 |---|---|
 | Shipment intake | Three documents, PDF/JPG/PNG, validation, private storage |
-| Extraction | Fixture extractor locally; Vertex adapter behind the same interface |
+| Extraction | Live Gemini adapter wired behind `AI_BACKEND`; deterministic fixture is the offline default |
 | Evidence | Quote, page, EXACT/CONTAINED/CLAIMED/NONE, derived highlight boxes |
 | Line items | Editable description, HSN, quantity, unit, price, amount, gross/net; per-line evidence and confidence; edits rerun all checks |
 | Cross-checks | 13 rules, line matching, tolerances, input-hash-bound resolutions |
@@ -28,7 +28,7 @@ The core build and the core-completeness slice are done and tested. The TDD, PDF
 ## Verification
 
 ```
-31 backend tests           passing
+35 backend tests           passing
 3 Playwright E2E paths     passing (full flow incl. line edit, history and reopen;
                            manual entry; blocked export)
 eval harness               260/260 fields on 24 synthetic documents
@@ -48,7 +48,7 @@ The 260/260 is the deterministic **fixture** extractor on synthetic data, not Ge
 
 These are not UI gaps; they need inputs or infrastructure:
 
-1. **Real Vertex AI run and 200-shipment evaluation.** No GCP credentials or real documents are available here. The adapter and eval harness are ready. This is the only path to an honest 95% claim and confidence calibration.
+1. **Live model run.** The provider path is wired. A free Gemini Developer API key on the synthetic documents would give a real model baseline; production still needs the client's Vertex project. Then the 200-shipment evaluation with real documents is the only path to an honest 95% claim and confidence calibration.
 2. **OCR fallback decision.** Only after the real scan evidence rate is measured. Image-only pages currently go to manual entry.
 3. **Durable worker + scheduler.** Extraction runs as an in-process background task; the job function is isolated. Retention is a CLI, not a nightly job. Both are deployment wiring.
 4. **Production hardening.** Upload rate limits, optional malware scan, monitoring/alerts, backups/restore drill.

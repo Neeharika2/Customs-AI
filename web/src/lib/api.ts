@@ -192,7 +192,8 @@ export interface Meta {
   app: string;
   version: string;
   env: string;
-  extractor: "vertex" | "fixture";
+  extractor: "vertex" | "developer" | "fixture";
+  model: string;
   region: string;
 }
 

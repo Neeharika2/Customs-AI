@@ -102,14 +102,15 @@ def healthz() -> dict:
 
 @app.get("/api/meta")
 def meta() -> dict:
-    from .extract import vertex
+    from .extract import ai
 
     return {
         "app": "Customs-AI",
         "version": "0.1.0",
         "env": settings.app_env,
-        "extractor": "vertex" if vertex.is_configured() else "fixture",
-        "region": settings.vertex_location,
+        "extractor": settings.ai_backend if ai.configured() else "fixture",
+        "model": settings.vertex_model or settings.gemini_model,
+        "region": settings.vertex_location if settings.ai_backend == "vertex" else "global",
     }
 
 

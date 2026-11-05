@@ -33,7 +33,8 @@ The seven-day slice is implemented and running locally. The following is measure
 | Line items | Editable with per-line evidence, confidence and correction log |
 | History | Per-shipment activity drawer across uploads, corrections, decisions and exports |
 | Export template | Versioned editor in settings |
-| Tests | 31 pytest, 3 Playwright end-to-end paths, evaluation harness |
+| Live model path | Gemini adapter wired behind `AI_BACKEND`; fixture remains the offline default |
+| Tests | 35 pytest, 3 Playwright end-to-end paths, evaluation harness |
 | Evaluation | 260/260 fields on 24 synthetic documents (fixture extractor — see §16.3) |
 
 **Deviations from the design as originally written** are listed in §18.1. They are recorded rather than hidden. The most material: extraction runs as an in-process background task rather than a Procrastinate worker, and the local demo uses the fixture extractor because no GCP credentials are committed.
@@ -76,7 +77,7 @@ The same system hardened against 200 real shipments, with the client's actual fi
 | Retention | 180 days post-export, configurable |
 | Deployment | Single container image, one process, Mumbai region |
 
-Measured in the slice: 9 seeded shipments, 26 synthetic documents, 260 evaluated fields, 31 backend tests, 3 end-to-end paths. Fixture extraction is sub-second; Gemini latency and cost remain targets until a production key is configured. The **review-time** and **amendment-rate** targets are pilot measurements, not claims about this build.
+Measured in the slice: 9 seeded shipments, 26 synthetic documents, 260 evaluated fields, 35 backend tests, 3 end-to-end paths. Fixture extraction is sub-second; Gemini latency and cost remain targets until a production key is configured. The **review-time** and **amendment-rate** targets are pilot measurements, not claims about this build.
 
 ---
 
@@ -495,7 +496,21 @@ Manual entry is a first-class state, not an error page. The page image is displa
 
 The **Gemini Developer API is not used for client documents**. Its free tier is explicitly used to improve Google's products, and the paid tier retains abuse-monitoring access. For a system whose selling point is confidentiality, that is disqualifying. It may be used for the public demo with synthetic documents, and this document would say so.
 
-**Local demo extractor.** When `VERTEX_MODEL` is empty, the pipeline selects a deterministic fixture extractor. It reads the native text layer and applies document-specific parsers, then flows through the same Pydantic validation, evidence verification, confidence formula, persistence, checks and gate. The review screen shows a **Demo extractor** label so the distinction is never hidden. The Vertex adapter in `api/app/extract/vertex.py` is the production path; it was not exercised here because no GCP credentials are committed.
+### 8.1.1 Backend selection
+
+`AI_BACKEND` selects the extraction provider:
+
+| Value | Use | Data handling |
+|---|---|---|
+| `fixture` (default) | Offline development, CI, demo without a key | No external call; deterministic text-layer parser |
+| `developer` | Synthetic-document demo and smoke test only | Gemini Developer API; free tier is used to improve products, so **never client documents** |
+| `vertex` | Production | Vertex AI in `asia-south1`; enterprise terms, regional processing, no training |
+
+The live path is wired into the pipeline, not adjacent to it. `api/app/extract/ai.py` sends the rendered page images with a document-specific prompt, receives a flat payload of fields and lines, and converts it to the same `ParsedDocument` the fixture parser produces. Everything downstream — evidence verification, format gating, confidence, persistence, checks and the human gate — is identical. `extraction_run` records the model ID, prompt version, token counts and region.
+
+The review screen labels the mode **Demo extractor** or **Live model**, so the distinction is never hidden. If the model returns invalid JSON, times out, or fails schema validation, the document routes to `NEEDS_MANUAL_ENTRY` with the reason; it does not silently fall back to the fixture.
+
+The live path is not exercised in the committed demo because no model key is present. The conversion and prompt contract are unit-tested; a live run against the synthetic golden set is the next validation step (§16.3).
 
 ### 8.2 Why not OCR-first
 
@@ -1175,7 +1190,7 @@ The rules engine is where a defect reaches a customs filing, so it receives the 
 | Export | 6 | Header order, quoting, BOM, row count, template version |
 | E2E | 3 | Happy path, blocked path, manual-entry path |
 
-**Shipped in this slice:** 31 pytest cases covering the check catalogue, confidence gates, stale-resolution invalidation, line-item corrections, history, document removal, template versioning, pagination, reopen, authz, CSRF, cross-org access and CSV correctness; 3 Playwright paths. The larger counts above are the pilot target. The slice tests the highest-consequence logic rather than every permutation, and §16.6 says what that leaves untested.
+**Shipped in this slice:** 35 pytest cases covering the check catalogue, confidence gates, stale-resolution invalidation, line-item corrections, history, document removal, template versioning, pagination, reopen, AI payload conversion, authz, CSRF, cross-org access and CSV correctness; 3 Playwright paths. The larger counts above are the pilot target. The slice tests the highest-consequence logic rather than every permutation, and §16.6 says what that leaves untested.
 
 ### 16.3 Golden set and harness
 
@@ -1192,7 +1207,7 @@ Missing documents: 1 (SHP-24815 bl)
 
 The harness prints a per-field table, every mismatch with expected/actual, and writes `eval/results.json`.
 
-**This is not a Gemini accuracy measurement.** The local extractor is deterministic and the documents are synthetic; the number proves the pipeline, evidence and persistence path, not a vision model. The honest claim is the mechanism: the same harness runs against 200 real shipments in week 3, with a holdout split of 140 development / 60 evaluation. Reporting accuracy on the set used to tune prompts is not evidence.
+**This is not a Gemini accuracy measurement.** The default extractor is deterministic and the documents are synthetic; the number proves the pipeline, evidence and persistence path, not a vision model. Re-run the seed and harness with `AI_BACKEND=developer` and a key to measure the live model on the same synthetic set; the harness is provider-agnostic because it reads the persisted fields. The honest claim is the mechanism: the same harness runs against 200 real shipments in week 3, with a holdout split of 140 development / 60 evaluation. Reporting accuracy on the set used to tune prompts is not evidence.
 
 The harness was built during the slice, before the pilot, because its result determines whether OCR fallback is required (§3.3).
 
@@ -1279,6 +1294,9 @@ GOOGLE_CLOUD_PROJECT
 VERTEX_LOCATION
 VERTEX_MODEL
 GOOGLE_APPLICATION_CREDENTIALS
+AI_BACKEND
+GEMINI_API_KEY
+GEMINI_MODEL
 AI_MONTHLY_CAP_PAISE
 MAX_UPLOAD_MB
 MAX_PAGES
@@ -1337,7 +1355,7 @@ The slice is honest about the gap between the design and the delivery. These are
 |---|---|---|---|
 | Database session | SQLAlchemy async | SQLAlchemy sync, FastAPI threadpool | The workload is small and I/O-bound; sync sessions remove an async failure surface from the 7-day slice. Swapping to `AsyncSession` is mechanical if concurrency grows. |
 | Extraction transport | Procrastinate worker | FastAPI `BackgroundTasks` | Fewer moving parts for a single-instance demo. `process_document(document_id)` takes only an id, opens its own session and is idempotent, so moving it behind Procrastinate changes the enqueue call only. A process restart during extraction can strand a document in `PROCESSING`; that is the known cost. |
-| Model | Vertex AI Gemini | Fixture extractor locally; Vertex adapter present | No GCP credentials are committed. The UI labels the mode **Demo extractor**; the adapter is `api/app/extract/vertex.py`. The 260/260 evaluation measures the pipeline, not Gemini. |
+| Model | Vertex AI Gemini | Live adapter wired behind `AI_BACKEND`; fixture default | No credentials are committed, so the demo runs the fixture. `developer` mode can run the real model on synthetic docs with a key; `vertex` is production. The 260/260 evaluation measures the pipeline, not Gemini. |
 | Upload transport | Presigned `PUT` to S3 | Multipart `POST` to the API | Server-side magic-byte validation before storage, and 25 MB is small. The storage adapter already issues presigned reads; presigned writes are an adapter extension, not an architecture change. |
 | Retention | Scheduled deletion job | `scripts/retention.py` CLI, dry-run by default; no scheduler | Wire it to a nightly job in the deployment platform. The policy, cutoff and object deletion are implemented and audited. |
 | XLSX | Deferred until the template arrives | CSV only | A9. XLSX is one `openpyxl` function behind the same column map. |
@@ -1364,11 +1382,12 @@ The pattern: the boundaries that would be expensive to move later (job function,
 
 ### 19.2 Next, in order
 
-1. **Week 3 — client inputs.** Real import template (A1); 200 historical shipments with ground truth. Until these exist, export compatibility and accuracy are claims, not facts. Move extraction to the Procrastinate worker and add the retention job in the same pass.
-2. **Week 4 — measure and tune.** Run the harness on the holdout split; add OCR only if evidence coverage demands it; tune tolerances per supplier.
-3. **Week 5 — shadow pilot.** Fourteen users, real shipments, no filing dependency. Measure median review time and correction rate.
-4. **Week 6 — harden and hand over.** Fix the top correction causes, train staff, instrument the amendment baseline.
-5. **Post-pilot.** Duplicate-invoice detection, supplier document checklists (prevent the missing-B/L case upstream), per-supplier tolerances, audit export for customs queries.
+1. **Now — live model on synthetic data.** Run `AI_BACKEND=developer` against the 26 synthetic documents and compare with the fixture baseline. This validates the provider path, prompt and schema before real documents arrive.
+2. **Week 3 — client inputs.** Real import template (A1); 200 historical shipments with ground truth. Until these exist, export compatibility and accuracy are claims, not facts. Move extraction to the Procrastinate worker and add the retention job in the same pass.
+3. **Week 4 — measure and tune.** Run the harness on the holdout split; add OCR only if evidence coverage demands it; tune tolerances per supplier.
+4. **Week 5 — shadow pilot.** Fourteen users, real shipments, no filing dependency. Measure median review time and correction rate.
+5. **Week 6 — harden and hand over.** Fix the top correction causes, train staff, instrument the amendment baseline.
+6. **Post-pilot.** Duplicate-invoice detection, supplier document checklists (prevent the missing-B/L case upstream), per-supplier tolerances, audit export for customs queries.
 
 ### 19.3 What would change the design
 

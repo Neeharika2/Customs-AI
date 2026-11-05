@@ -104,7 +104,7 @@ These are demo credentials only, supplied through `DEMO_EXEC_PASSWORD` and `DEMO
 ### 1.6 Tests
 
 ```bash
-# 31 backend tests: checks, gate staleness, line edits, history, authz, CSV
+# 35 backend tests: checks, gate staleness, line edits, history, AI conversion, authz, CSV
 cd api && uv run pytest -q
 
 # 3 end-to-end paths: full approval/export, manual entry, blocked export
@@ -120,6 +120,21 @@ cd api && uv run python ../eval/run.py
 ```
 
 Prints per-field accuracy and evidence distribution for the synthetic golden set and writes `eval/results.json`. The local demo uses a deterministic fixture extractor; this measures the pipeline, not Gemini.
+
+### 1.8 Optional: run the live model on synthetic documents
+
+The live path is wired. A free Gemini Developer API key is acceptable for **synthetic documents only** — its free tier is used to improve Google's products, so never send client documents through it. Production uses Vertex AI (`AI_BACKEND=vertex`).
+
+```bash
+cd api
+AI_BACKEND=developer GEMINI_API_KEY=<key> GEMINI_MODEL=gemini-2.5-flash \
+  uv run python ../seed/seed_demo.py
+uv run python ../eval/run.py
+```
+
+This re-extracts all 26 demo documents through the model, then measures the persisted fields. The review screen shows **Live model** instead of **Demo extractor**. If the model fails a document, it routes to manual entry rather than silently falling back.
+
+To return to the offline demo, unset `AI_BACKEND` (default `fixture`) and reseed.
 
 ---
 
@@ -172,12 +187,13 @@ Set the environment variables in §4. Minimum for a working deployment:
 - `DATABASE_URL`
 - `SECRET_KEY`
 - `STORAGE_BACKEND=s3`, `S3_BUCKET`, `S3_REGION`, credentials
+- `AI_BACKEND=vertex`
 - `GOOGLE_CLOUD_PROJECT`, `VERTEX_MODEL`, `VERTEX_LOCATION`
 - `APP_ENV=production`, `APP_BASE_URL`
 
 For Vertex AI, mount an ADC service-account file through the platform's secret mechanism or use workload identity. The service account needs `roles/aiplatform.user` only. The repository never contains the key.
 
-If `VERTEX_MODEL` is empty, the application uses the deterministic fixture extractor and labels the review screen **Demo extractor**. The production adapter is `api/app/extract/vertex.py`.
+If `AI_BACKEND=fixture` or the Vertex configuration is incomplete, the application uses the deterministic fixture extractor and labels the review screen **Demo extractor**. The live adapter is `api/app/extract/ai.py`; it selects the backend from `AI_BACKEND` and records the model and prompt version per extraction run.
 
 ### 3.3 Storage
 
@@ -225,6 +241,9 @@ Names only. Values live in the platform secret store; `.env` is ignored by git.
 | `S3_BUCKET` | s3 | Private document bucket |
 | `S3_ACCESS_KEY_ID` | s3 | Scoped application credentials |
 | `S3_SECRET_ACCESS_KEY` | s3 | Scoped application credentials |
+| `AI_BACKEND` | optional | `fixture` (default), `developer` (synthetic only) or `vertex` |
+| `GEMINI_API_KEY` | developer | Gemini Developer API key; synthetic documents only |
+| `GEMINI_MODEL` | developer | Model ID for the Developer API |
 | `GOOGLE_CLOUD_PROJECT` | Vertex | GCP project for Vertex AI |
 | `VERTEX_LOCATION` | Vertex | `asia-south1` |
 | `VERTEX_MODEL` | Vertex | Pinned model ID; empty selects the fixture |
@@ -249,7 +268,7 @@ Never commit any of these values. `.env.example` contains names and local defaul
 | Cross-document checks and gate | Real |
 | Correction history, approval, export | Real |
 | CSV generation in a configurable filing layout | Real |
-| Model extraction | **Fixture extractor locally**; Vertex AI adapter for production |
+| Model extraction | **Live path wired** (`AI_BACKEND=developer` for synthetic, `vertex` for production); fixture is the offline default |
 | Customs portal filing | Out of scope — the export is the hand-off |
 | Importer email intake | Out of scope — staff upload documents |
 | Payments / WhatsApp | Not present |
@@ -267,7 +286,7 @@ That last row is a known limitation. The extraction function is isolated behind 
 | `ModuleNotFoundError: app` | Running from the wrong directory | Run API commands from `api/` |
 | Login returns 401 | Wrong demo password or stale session | Use the demo button; clear cookies |
 | Mutations return 403 `csrf_failed` | Missing CSRF header | The SPA sends it automatically; API clients must send `X-CSRF-Token` from the `csrf` cookie |
-| Review shows **Demo extractor** | `VERTEX_MODEL` is empty | Expected locally; set GCP credentials and model ID for Vertex |
+| Review shows **Demo extractor** | `AI_BACKEND=fixture` or no model key | Expected offline; set `AI_BACKEND=vertex` + Vertex credentials, or `developer` + a key for synthetic docs |
 | Upload rejected `document_type_exists` | One invoice/packing list/BL per shipment | Create a new shipment or remove the existing document |
 | Export disabled with blockers | Gate is doing its job | Open review and clear the listed fields/checks |
 | E2E cannot find the database | Seed not run | `cd api && uv run python ../seed/seed_demo.py` |

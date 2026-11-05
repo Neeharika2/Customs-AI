@@ -35,9 +35,9 @@ The seven-day slice is implemented and running locally. The following is measure
 | Export template | Versioned editor in settings |
 | Live model path | Gemini adapter wired behind `AI_BACKEND`; fixture remains the offline default |
 | Tests | 35 pytest, 3 Playwright end-to-end paths, evaluation harness |
-| Evaluation | 260/260 fields on 24 synthetic documents (fixture extractor — see §16.3) |
+| Evaluation | **267/268 fields (99.6%)** on 25 synthetic documents with Gemini; fixture baseline 260/260 (see §16.3) |
 
-**Deviations from the design as originally written** are listed in §18.1. They are recorded rather than hidden. The most material: extraction runs as an in-process background task rather than a Procrastinate worker, and the local demo uses the fixture extractor because no GCP credentials are committed.
+**Deviations from the design as originally written** are listed in §18.1. They are recorded rather than hidden. The most material: extraction runs as an in-process background task rather than a Procrastinate worker, and the demo can run either the fixture or a Developer API key; Vertex credentials are not committed.
 
 ---
 
@@ -77,7 +77,7 @@ The same system hardened against 200 real shipments, with the client's actual fi
 | Retention | 180 days post-export, configurable |
 | Deployment | Single container image, one process, Mumbai region |
 
-Measured in the slice: 9 seeded shipments, 26 synthetic documents, 260 evaluated fields, 35 backend tests, 3 end-to-end paths. Fixture extraction is sub-second; Gemini latency and cost remain targets until a production key is configured. The **review-time** and **amendment-rate** targets are pilot measurements, not claims about this build.
+Measured in the slice: 9 seeded shipments, 26 synthetic documents, 268 evaluated fields on the live run (267 correct), 35 backend tests, 3 end-to-end paths. Live extraction took roughly 10–20 seconds per document; fixture extraction is sub-second. Cost and latency at 1,100 shipments/month remain estimates until a production Vertex project is connected. The **review-time** and **amendment-rate** targets are pilot measurements, not claims about this build.
 
 ---
 
@@ -510,7 +510,7 @@ The live path is wired into the pipeline, not adjacent to it. `api/app/extract/a
 
 The review screen labels the mode **Demo extractor** or **Live model**, so the distinction is never hidden. If the model returns invalid JSON, times out, or fails schema validation, the document routes to `NEEDS_MANUAL_ENTRY` with the reason; it does not silently fall back to the fixture.
 
-The live path is not exercised in the committed demo because no model key is present. The conversion and prompt contract are unit-tested; a live run against the synthetic golden set is the next validation step (§16.3).
+The live path was exercised against the synthetic golden set: 25 of 26 documents extracted, 267/268 fields correct (99.6%), with 219 EXACT, 40 CONTAINED and 8 CLAIMED fields. The free-tier quota forced a mix of 3.5 Flash (4 documents) and 3.1 Flash Lite (21 documents). Details and the single miss are in §16.3.
 
 ### 8.2 Why not OCR-first
 
@@ -1196,20 +1196,33 @@ The rules engine is where a defect reaches a customs filing, so it receives the 
 
 `eval/run.py` compares the persisted fields for the nine seeded shipments against a generated golden set. It evaluates the original extraction — before any human correction — by reading the earliest `correction.old_value`, so a correction cannot be scored as an extraction miss.
 
-Measured on 4 November 2026:
+**Live model run — 5 November 2026.** Gemini Developer API, synthetic documents only.
+
+```
+documents compared 25 · fields compared 268 · exact match 267/268 (99.6%)
+Models: gemini-3.1-flash-lite (21 docs) · gemini-3.5-flash (4 docs)
+Evidence: EXACT 219 · CONTAINED 40 · CLAIMED 8
+Manual entry: 1 (SHP-24816 illegible B/L)
+Missing: 1 (SHP-24815 B/L)
+Miss: SHP-24816 invoice declared_item_count — expected 1, extracted null
+```
+
+Two models appear because the free-tier 3.5 Flash quota is 20 requests/day; it exhausted after four documents. The remainder used 3.1 Flash Lite, which has a separate bucket, with retry on 503 capacity errors. Production pins one Vertex model; the mix is a quota artifact, not an architecture choice.
+
+This is a real model result, but not the client's result: 25 synthetic documents, not 200 real shipments. It proves the live path, prompt, schema, evidence and persistence at 99.6%. It does not prove the 95% target on real scans, bilingual documents or supplier variety. The single miss is a low-value count field that the line-count check treats as optional.
+
+**Fixture baseline (offline).**
 
 ```
 documents compared 24 · fields compared 260 · exact match 260/260 (100.0%)
-Evidence distribution: EXACT 260
-Manual entry documents: 2 (SHP-24813 packing, SHP-24816 bl)
-Missing documents: 1 (SHP-24815 bl)
+Evidence: EXACT 260 · manual 2 · missing 1
 ```
 
-The harness prints a per-field table, every mismatch with expected/actual, and writes `eval/results.json`.
+That number is the deterministic parser, not a model measurement. It exists so CI and the demo run without a provider key.
 
-**This is not a Gemini accuracy measurement.** The default extractor is deterministic and the documents are synthetic; the number proves the pipeline, evidence and persistence path, not a vision model. Re-run the seed and harness with `AI_BACKEND=developer` and a key to measure the live model on the same synthetic set; the harness is provider-agnostic because it reads the persisted fields. The honest claim is the mechanism: the same harness runs against 200 real shipments in week 3, with a holdout split of 140 development / 60 evaluation. Reporting accuracy on the set used to tune prompts is not evidence.
+The harness prints a per-field table, every mismatch with expected/actual, and writes `eval/results.json`. The same harness runs against 200 real shipments in week 3 with a 140 development / 60 evaluation split; reporting accuracy on the set used to tune prompts is not evidence.
 
-The harness was built during the slice, before the pilot, because its result determines whether OCR fallback is required (§3.3).
+The harness was built during the slice, before the pilot, because its result determines whether OCR fallback is required (§3.3). With the live run, OCR remains unneeded for text PDFs; the illegible B/L still routes to manual entry.
 
 ### 16.4 Metric definitions
 
@@ -1355,7 +1368,7 @@ The slice is honest about the gap between the design and the delivery. These are
 |---|---|---|---|
 | Database session | SQLAlchemy async | SQLAlchemy sync, FastAPI threadpool | The workload is small and I/O-bound; sync sessions remove an async failure surface from the 7-day slice. Swapping to `AsyncSession` is mechanical if concurrency grows. |
 | Extraction transport | Procrastinate worker | FastAPI `BackgroundTasks` | Fewer moving parts for a single-instance demo. `process_document(document_id)` takes only an id, opens its own session and is idempotent, so moving it behind Procrastinate changes the enqueue call only. A process restart during extraction can strand a document in `PROCESSING`; that is the known cost. |
-| Model | Vertex AI Gemini | Live adapter wired behind `AI_BACKEND`; fixture default | No credentials are committed, so the demo runs the fixture. `developer` mode can run the real model on synthetic docs with a key; `vertex` is production. The 260/260 evaluation measures the pipeline, not Gemini. |
+| Model | Vertex AI Gemini | Live adapter wired behind `AI_BACKEND`; fixture default offline | A live Developer API run on synthetic docs scored 267/268 (99.6%). No client credentials are committed; `vertex` remains production. The free-tier quota forced a 3.5 Flash / 3.1 Flash Lite split for the batch. |
 | Upload transport | Presigned `PUT` to S3 | Multipart `POST` to the API | Server-side magic-byte validation before storage, and 25 MB is small. The storage adapter already issues presigned reads; presigned writes are an adapter extension, not an architecture change. |
 | Retention | Scheduled deletion job | `scripts/retention.py` CLI, dry-run by default; no scheduler | Wire it to a nightly job in the deployment platform. The policy, cutoff and object deletion are implemented and audited. |
 | XLSX | Deferred until the template arrives | CSV only | A9. XLSX is one `openpyxl` function behind the same column map. |
@@ -1382,7 +1395,7 @@ The pattern: the boundaries that would be expensive to move later (job function,
 
 ### 19.2 Next, in order
 
-1. **Now — live model on synthetic data.** Run `AI_BACKEND=developer` against the 26 synthetic documents and compare with the fixture baseline. This validates the provider path, prompt and schema before real documents arrive.
+1. **Live model on synthetic data — done.** 267/268 fields (99.6%) across 25 documents; the one miss is a declared item count. The free-tier quota forced a 3.5 Flash / 3.1 Flash Lite split.
 2. **Week 3 — client inputs.** Real import template (A1); 200 historical shipments with ground truth. Until these exist, export compatibility and accuracy are claims, not facts. Move extraction to the Procrastinate worker and add the retention job in the same pass.
 3. **Week 4 — measure and tune.** Run the harness on the holdout split; add OCR only if evidence coverage demands it; tune tolerances per supplier.
 4. **Week 5 — shadow pilot.** Fourteen users, real shipments, no filing dependency. Measure median review time and correction rate.

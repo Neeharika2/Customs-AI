@@ -28,6 +28,7 @@ from app.models import (  # noqa: E402
     Document,
     DocumentStatus,
     DocumentType,
+    ExtractionRun,
     Field,
     Org,
     Shipment,
@@ -165,9 +166,14 @@ def main() -> None:
                     if not ok:
                         misses.append((label, key, expected, actual))
 
+        model_counts = Counter(
+            run.model_id for run in db.scalars(select(ExtractionRun)).all()
+        )
+
     total = len(results)
     correct = sum(1 for r in results if r["ok"])
     accuracy = (correct / total * 100) if total else 0.0
+    live = any(not str(model).startswith("fixture") for model in model_counts)
 
     by_key: dict[str, list[bool]] = defaultdict(list)
     for row in results:
@@ -178,6 +184,8 @@ def main() -> None:
     print("=" * 78)
     print(f"documents compared {total and len({r['document'] for r in results}) or 0}"
           f" · fields compared {total} · exact match {correct}/{total} ({accuracy:.1f}%)")
+    if live:
+        print("Models:", " · ".join(f"{m} ({c})" for m, c in sorted(model_counts.items())))
     print()
     print(f"{'FIELD':28} {'N':>4} {'OK':>4} {'ACCURACY':>9}")
     print("-" * 78)
@@ -213,12 +221,16 @@ def main() -> None:
             {"document": label, "field": key, "expected": str(expected), "actual": str(actual)}
             for label, key, expected, actual in misses
         ],
-        "extractor": "fixture",
+        "extractor": "live" if live else "fixture",
+        "models": dict(model_counts),
     }
     (ROOT / "eval" / "results.json").write_text(json.dumps(output, indent=2))
     print()
     print("Wrote eval/results.json")
-    print("Note: fixture extractor, synthetic documents. Not a Gemini accuracy measurement.")
+    if live:
+        print("Note: live model(s) on synthetic documents — not client data.")
+    else:
+        print("Note: fixture extractor, synthetic documents. Not a Gemini accuracy measurement.")
 
 
 if __name__ == "__main__":

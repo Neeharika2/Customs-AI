@@ -97,16 +97,21 @@ cd web && pnpm test:e2e             # upload → review → approve → export, 
 cd api && uv run python ../eval/run.py
 ```
 
-The evaluation harness compares 260 extracted fields across 24 synthetic documents against a generated golden set. The default run uses the fixture extractor; set `AI_BACKEND=developer` and a Gemini key to run the same harness through a live model on synthetic documents only.
+The harness compares persisted fields against a generated golden set.
+
+**Live Gemini run — 5 November 2026 (synthetic documents only):**
 
 ```
-fields compared 260 · exact match 260/260 (100.0%)
-Evidence: EXACT 260
-Manual entry documents: 2 (SHP-24813 packing, SHP-24816 bl)
-Missing documents: 1 (SHP-24815 bl)
+documents compared 25 · fields compared 268 · exact match 267/268 (99.6%)
+Models: gemini-3.1-flash-lite (21 docs) · gemini-3.5-flash (4 docs)
+Evidence: EXACT 219 · CONTAINED 40 · CLAIMED 8
+Manual entry: 1 (illegible B/L) · Missing: 1 (no B/L)
+Miss: declared_item_count on one invoice
 ```
 
-**Read that number honestly.** It measures the deterministic fixture extractor on synthetic documents, not Gemini on real ones. The harness is the mechanism that would measure the real 200-shipment set in week 3 of the pilot.
+**Fixture baseline (offline):** 260/260 across 24 documents, all `EXACT`.
+
+Read both honestly. The live run is a real model result on **25 synthetic documents, not 200 client shipments**. The model split is a free-tier quota artifact: 3.5 Flash allows 20 requests/day, so the remainder used 3.1 Flash Lite. Production pins one Vertex model. The 200-shipment holdout evaluation is still the next step.
 
 ---
 

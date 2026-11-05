@@ -31,11 +31,12 @@ The core build and the core-completeness slice are done and tested. The TDD, PDF
 35 backend tests           passing
 3 Playwright E2E paths     passing (full flow incl. line edit, history and reopen;
                            manual entry; blocked export)
-eval harness               260/260 fields on 24 synthetic documents
+eval harness               live Gemini: 267/268 fields (99.6%) on 25 synthetic docs
+                           fixture baseline: 260/260 on 24 docs
 demo dataset               9 shipments, 26 PDFs, 2 manual-entry, 1 missing document
 ```
 
-The 260/260 is the deterministic **fixture** extractor on synthetic data, not Gemini. TDD §16.3 and §18.1 state this.
+The live 267/268 is Gemini on synthetic documents, not the client's 200. The fixture baseline is the offline path. TDD §16.3 and §18.1 state both.
 
 ## Submission artifacts
 
@@ -48,7 +49,7 @@ The 260/260 is the deterministic **fixture** extractor on synthetic data, not Ge
 
 These are not UI gaps; they need inputs or infrastructure:
 
-1. **Live model run.** The provider path is wired. A free Gemini Developer API key on the synthetic documents would give a real model baseline; production still needs the client's Vertex project. Then the 200-shipment evaluation with real documents is the only path to an honest 95% claim and confidence calibration.
+1. **200-shipment evaluation.** The live model scored 267/268 (99.6%) on 25 synthetic documents. Real client documents, their filing template and a Vertex project are still needed for the only honest 95% claim and confidence calibration.
 2. **OCR fallback decision.** Only after the real scan evidence rate is measured. Image-only pages currently go to manual entry.
 3. **Durable worker + scheduler.** Extraction runs as an in-process background task; the job function is isolated. Retention is a CLI, not a nightly job. Both are deployment wiring.
 4. **Production hardening.** Upload rate limits, optional malware scan, monitoring/alerts, backups/restore drill.
@@ -57,10 +58,9 @@ These are not UI gaps; they need inputs or infrastructure:
 
 ## Next session order
 
-1. Vertex credentials → run the adapter on the 10-document golden set → fix prompt/schema gaps.
-2. Obtain the 200-shipment history + filing template from the client.
-3. Move extraction to Procrastinate; schedule retention; add upload rate limits.
-4. Deploy to Mumbai; run the reviewer checklist.
+1. Obtain the 200-shipment history + filing template from the client; run the holdout evaluation.
+2. Move extraction to Procrastinate; schedule retention; add upload rate limits.
+3. Deploy to Mumbai; run the reviewer checklist.
 
 ## Demo
 

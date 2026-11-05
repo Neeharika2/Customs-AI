@@ -11,6 +11,8 @@ still demoted.
 """
 from __future__ import annotations
 
+import re
+import time
 from decimal import Decimal, InvalidOperation
 
 from pydantic import BaseModel, Field
@@ -148,13 +150,34 @@ Rules:
 """
 
 
+NUMERIC_FIELDS = {
+    "invoice_total", "freight", "insurance", "discount", "gross_weight_kg",
+    "net_weight_kg", "packages", "declared_item_count",
+}
+
+
 def _dec(value: str | int | float | None) -> Decimal | None:
     if value is None or value == "":
         return None
+    # Models often return "3,120.00 KG" or "2,400 PCS". Take the number.
+    match = re.search(r"-?\d[\d,]*(?:\.\d+)?", str(value))
+    if not match:
+        return None
     try:
-        return Decimal(str(value).replace(",", "").strip())
+        return Decimal(match.group(0).replace(",", ""))
     except (InvalidOperation, ValueError):
         return None
+
+
+def _clean_field(key: str, value: str | int | float) -> str:
+    text = str(value).strip()
+    if key in NUMERIC_FIELDS:
+        match = re.search(r"-?\d[\d,]*(?:\.\d+)?", text)
+        if match:
+            return match.group(0).replace(",", "")
+    if key in {"currency", "incoterm"}:
+        return text.upper()
+    return text
 
 
 def to_parsed(payload: AIPayload, document_type: DocumentType) -> ParsedDocument:
@@ -162,7 +185,7 @@ def to_parsed(payload: AIPayload, document_type: DocumentType) -> ParsedDocument
     fields = [
         ParsedField(
             key=item.key,
-            value=str(item.value).strip() if item.value is not None else None,
+            value=_clean_field(item.key, item.value) if item.value is not None else None,
             quote=item.quote,
             page_idx=max(1, item.page),
             model_conf=item.confidence,
@@ -222,15 +245,29 @@ def extract(document_type: DocumentType, images: list[bytes]) -> tuple[AIPayload
 
     parts = [types.Part.from_bytes(data=image, mime_type="image/jpeg") for image in images]
     parts.append(types.Part.from_text(text=prompt_for(document_type)))
-    response = client.models.generate_content(
-        model=model,
-        contents=parts,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            response_schema=SCHEMA,
-            temperature=0,
-        ),
-    )
+
+    response = None
+    last_error: Exception | None = None
+    for attempt in range(3):
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=parts,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=SCHEMA,
+                    temperature=0,
+                ),
+            )
+            break
+        except Exception as exc:  # provider rate limit / transient capacity
+            last_error = exc
+            text = str(exc)
+            if not any(code in text for code in ("503", "429", "500", "DEADLINE")):
+                raise
+            time.sleep(2 + attempt * 3)
+    if response is None:
+        raise last_error or RuntimeError("model call failed")
     text = (response.text or "").strip()
     if text.startswith("```"):
         text = text.strip("`")

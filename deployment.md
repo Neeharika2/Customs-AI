@@ -104,7 +104,7 @@ These are demo credentials only, supplied through `DEMO_EXEC_PASSWORD` and `DEMO
 ### 1.6 Tests
 
 ```bash
-# 22 backend tests: checks, gate staleness, authz, CSV
+# 31 backend tests: checks, gate staleness, line edits, history, authz, CSV
 cd api && uv run pytest -q
 
 # 3 end-to-end paths: full approval/export, manual entry, blocked export
@@ -293,5 +293,9 @@ That last row is a known limitation. The extraction function is isolated behind 
 - **Backups.** Enable Postgres PITR (7 days) and daily snapshots (30 days). Enable S3 versioning. A backup that has never been restored is a hypothesis.
 - **Migrations.** Expand → deploy → contract. Never drop a column in the same release as the code that stops using it.
 - **Monitoring.** Log `request_id`, `org_id`, `user_id`; never log document content. Alert on extraction failure rate, queue depth and 5xx rate.
-- **Retention.** `RETENTION_DAYS` is enforced by the deletion strategy described in `TDD.md` §6.8. The scheduled job is the next operational item; the current slice exposes deletion-on-request through the data model and manual operations.
+- **Retention.** `RETENTION_DAYS` is the cutoff. Run the purge as a nightly job:
+  ```bash
+  cd api && uv run python ../scripts/retention.py --apply
+  ```
+  The default is a dry run. It deletes source files, page images and raw model responses for exported shipments past the window, keeps extracted values and the audit trail, and logs `retention.purged`. Scheduling the command is a deployment-platform concern (cron, EventBridge, or a scheduled task).
 - **AI spend.** `AI_MONTHLY_CAP_PAISE` is the configured guard; enforce it before adding a production model key.

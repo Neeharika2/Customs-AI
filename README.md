@@ -18,8 +18,12 @@ upload 3 documents → extract with evidence → cross-check → review → appr
 - **Extract** parties, invoice number/date, currency, Incoterm, line items with HSN, packages, weights and containers. Every field carries a quote, a page and a confidence score.
 - **Cross-check** 13 rules: line arithmetic, invoice total, quantities, packages, gross weight across all three documents, ISO 6346 container checksums, party names, currency, Incoterms, dates and document completeness.
 - **Review** side by side. Selecting a field highlights the exact rectangle on the document and shows the source quote.
+- **Correct line items** — description, HSN, quantity, unit price and amounts are editable with per-line evidence and confidence; edits rerun every check.
+- **History** — every upload, correction, check decision, approval and export in one per-shipment timeline.
+- **Manage documents** — re-extract or remove a document and rerun the checks; blocked once approved.
 - **Gate** on uncertainty. Low-confidence fields and every failed check must be cleared by a named person; a manager approves; any edit after approval voids it.
 - **Export** a CSV in a configurable filing-software layout, with a preview and a hard server-side gate.
+- **Edit the export template** — managers change headers, sources, formats and required columns; saving creates a new version without touching old exports.
 - **Measure** correction rate by field and supplier, first-pass acceptance and evidence coverage.
 
 The design decision that matters: **the model proposes, the evidence caps, the checks contradict, the human decides.** A high confidence score never suppresses a mismatch.
@@ -49,7 +53,7 @@ Open **SHP-24811** first. The weight warning is already there.
 | AI | Vertex AI Gemini adapter; deterministic fixture extractor locally |
 | Storage | S3 (`ap-south-1`) in production, local disk for development |
 | Web | React 19, TypeScript, Vite, custom CSS design system |
-| Tests | pytest (22), Playwright (3 end-to-end paths) |
+| Tests | pytest (31), Playwright (3 end-to-end paths) |
 
 No Docker is required for local development: `scripts/dev_db.py` runs a bundled PostgreSQL binary.
 
@@ -80,7 +84,7 @@ Open **http://localhost:5173**.
 ## Tests
 
 ```bash
-cd api && uv run pytest -q          # 22 backend tests
+cd api && uv run pytest -q          # 31 backend tests
 cd web && pnpm test:e2e             # upload → review → approve → export, manual entry, blocked export
 cd api && uv run python ../eval/run.py
 ```
@@ -118,7 +122,7 @@ deployment.md   runbook
 |---|---|
 | Upload, validation, rendering, evidence | Vertex AI extraction without credentials (adapter present) |
 | 13 cross-document checks and the gate | Durable job queue (extraction runs as an in-process background task) |
-| Corrections, approvals, audit trail | Scheduled retention job |
+| Corrections, approvals, audit trail, line-item edits | Scheduled retention job (CLI exists) |
 | Configurable CSV export | Excel `.xlsx` — waiting on the client's real template |
 | Reports, settings, roles | Importer portal, HSN classification, duty, customs filing |
 

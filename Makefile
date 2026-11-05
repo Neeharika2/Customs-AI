@@ -1,4 +1,4 @@
-.PHONY: venv db seed api web build test e2e fmt
+.PHONY: venv db seed api web build test e2e retention fmt
 
 venv:
 	cd api && uv sync
@@ -27,6 +27,9 @@ test:
 
 e2e:
 	cd web && pnpm test:e2e
+
+retention:
+	cd api && uv run python ../scripts/retention.py --org "Demo Freight"
 
 fmt:
 	cd api && uv run ruff format app tests

@@ -99,3 +99,29 @@ li {
   orphans: 3;
   widows: 3;
 }
+
+img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid #e6e4de;
+  border-radius: 6px;
+  margin: 6px 0 2px;
+  page-break-inside: avoid;
+}
+
+figure {
+  margin: 12px 0 4px;
+  text-align: left;
+  page-break-inside: avoid;
+}
+
+figure img {
+  width: 100%;
+}
+
+figcaption {
+  margin-top: 4px;
+  font-size: 8.5pt;
+  color: #6b6f76;
+  text-align: left;
+}

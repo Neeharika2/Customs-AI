@@ -581,8 +581,12 @@ def approve(
 @router.post("/shipments/{shipment_id}/reopen", response_model=SubmitOut)
 def reopen(shipment_id: str, user: ManagerUser, db: DbSession) -> SubmitOut:
     shipment = _shipment(db, shipment_id, user.org_id)
-    if shipment.status not in {ShipmentStatus.READY, ShipmentStatus.AWAITING_APPROVAL}:
-        raise problem(409, "invalid_state", "Shipment is not approved or awaiting approval.")
+    if shipment.status not in {
+        ShipmentStatus.READY,
+        ShipmentStatus.AWAITING_APPROVAL,
+        ShipmentStatus.EXPORTED,
+    }:
+        raise problem(409, "invalid_state", "Shipment is not approved or exported.")
     shipment.status = ShipmentStatus.NEEDS_REVIEW
     shipment.approved_by = None
     shipment.approved_at = None

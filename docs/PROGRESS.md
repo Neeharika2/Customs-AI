@@ -1,54 +1,66 @@
-# Progress — 4 November 2026
+# Progress — 5 November 2026
 
 ## Where we are
 
-The core build is complete, and the **core completeness** slice is now built and tested. Everything below runs locally against the seeded demo and is pushed to `main`.
+The core build and the core-completeness slice are done and tested. The TDD, PDF and submission ZIP reflect the current code. The remaining gaps are production/AI validation work that needs client inputs or cloud credentials, not missing product features.
 
-## Built in this pass
+## Built and verified
 
-| Item | What it does |
+| Area | State |
 |---|---|
-| **Editable line items** | The review table now edits description, HSN, quantity, unit, price, amount, gross and net per line. Each line carries its own evidence level, confidence, page and quote. Saves log a correction, rerun all 13 checks, and the E2E proves the gate reacts. |
-| **Activity / history** | A per-shipment timeline merges corrections, approvals, exports and audit events: uploads, extraction, manual entry, submissions, acknowledgements, overrides, reopen and approval invalidation. Available from the shipment page and the review header. |
-| **Document remove / re-extract** | Each document slot has Re-extract and Remove. Removal deletes the file, fields and lines, recomputes checks and updates the shipment status. Both actions are audited and blocked after approval. |
-| **Pagination** | The shipment list now pages 50 at a time with a range and previous/next controls; filters and search reset the page. Server-side pagination already existed. |
-| **Export template editor** | Managers can edit the column map — header, source, format, required — with versioning. Saving creates vN+1 and deactivates the old template; existing exports keep the version they used. |
-| **Reopen** | Managers can reopen a READY or EXPORTED shipment; approval is voided, status returns to review, and the history records it. |
-| **Audit coverage** | Extraction and manual entry now write audit events; the seed writes upload events so the demo history is populated. |
+| Shipment intake | Three documents, PDF/JPG/PNG, validation, private storage |
+| Extraction | Fixture extractor locally; Vertex adapter behind the same interface |
+| Evidence | Quote, page, EXACT/CONTAINED/CLAIMED/NONE, derived highlight boxes |
+| Line items | Editable description, HSN, quantity, unit, price, amount, gross/net; per-line evidence and confidence; edits rerun all checks |
+| Cross-checks | 13 rules, line matching, tolerances, input-hash-bound resolutions |
+| Gate | Field confirmation, WARN acknowledgement, BLOCK override, approval invalidation |
+| Review | Document beside fields, source highlight, evidence panel, keyboard flow |
+| History | Per-shipment activity drawer: uploads, extraction, corrections, checks, approvals, exports |
+| Document lifecycle | Re-extract and remove with check recomputation; blocked after approval |
+| List | Filters, search, pagination, attention-first ordering |
+| Export | Configurable CSV with BOM/CRLF/formula escaping, preview and gate |
+| Export template | Versioned editor for headers, sources, formats and required columns |
+| Reports | Evidence coverage, first-pass acceptance, correction rate by field and supplier |
+| Settings | Tolerances, retention, template, users |
+| Roles | Executive and manager, enforced server-side |
+| Retention | `scripts/retention.py`, dry-run by default; deletes document objects past the cutoff and audits the purge |
 
 ## Verification
 
 ```
-31 backend tests           passed
-3 Playwright E2E paths     passed
+31 backend tests           passing
+3 Playwright E2E paths     passing (full flow incl. line edit, history and reopen;
+                           manual entry; blocked export)
 eval harness               260/260 fields on 24 synthetic documents
-demo dataset               9 shipments, 26 PDFs
+demo dataset               9 shipments, 26 PDFs, 2 manual-entry, 1 missing document
 ```
 
-The evaluation number is the deterministic **fixture** extractor on synthetic data. It is not a Gemini measurement. See `TDD.md` §16.3 and §18.1.
+The 260/260 is the deterministic **fixture** extractor on synthetic data, not Gemini. TDD §16.3 and §18.1 state this.
 
-## Repository state
+## Submission artifacts
 
-- Branch `main`, pushed to https://github.com/Neeharika2/Customs-AI
-- Demo database reseeded clean (no E2E leftovers)
-- `api/app/static` rebuilt so the single-server demo at port 8000 has the new UI
+- `TDD.md` + `TDD.pdf` (51–52 pages, as-built, screenshots included)
+- `deployment.md` (local, Docker, production, env var names, demo logins)
+- `Customs-AI-submission.zip` (TDD.pdf + deployment.md)
+- Repository: https://github.com/Neeharika2/Customs-AI
 
-## Still stale — first task tomorrow
+## What is genuinely left
 
-1. **`TDD.md` and `TDD.pdf` are behind the code.** They still say 24 tests and do not describe line-item editing, history, document lifecycle, pagination, template editing or reopen. Update §1 build status, §6/§11/§16/§18, then regenerate:
-   ```bash
-   .venv/bin/python scripts/build_tdd.py
-   ```
-2. **`Customs-AI-submission.zip` is stale.** It predates this slice. Rebuild it after the TDD refresh (TDD.pdf + deployment.md only).
-3. Add screenshots of the line editor, history drawer and template editor to `docs/screenshots/` if the TDD references them.
+These are not UI gaps; they need inputs or infrastructure:
 
-## Next build priorities
+1. **Real Vertex AI run and 200-shipment evaluation.** No GCP credentials or real documents are available here. The adapter and eval harness are ready. This is the only path to an honest 95% claim and confidence calibration.
+2. **OCR fallback decision.** Only after the real scan evidence rate is measured. Image-only pages currently go to manual entry.
+3. **Durable worker + scheduler.** Extraction runs as an in-process background task; the job function is isolated. Retention is a CLI, not a nightly job. Both are deployment wiring.
+4. **Production hardening.** Upload rate limits, optional malware scan, monitoring/alerts, backups/restore drill.
+5. **Public deployment.** No cloud account/domain was available; the TDD says “not publicly deployed”. Local run is fully documented.
+6. **XLSX export.** Deferred until the client's actual import template is supplied (A9). The column map is ready.
 
-1. **Real Vertex AI run** — the adapter is written but has never been exercised against the model. Then the 200-shipment golden set with a holdout split: this is the only way to make a real accuracy claim.
-2. **Durable extraction** — move the in-process background task to the Procrastinate worker; add retries, dead-letter and job status.
-3. **Retention job + delete-on-request endpoint** — the policy and data model exist; the scheduler does not.
-4. **Rate limits and malware scanning** on uploads; monitoring/alerts; a real Mumbai deployment.
-5. **OCR fallback** only if the real scan evidence rate demands it.
+## Next session order
+
+1. Vertex credentials → run the adapter on the 10-document golden set → fix prompt/schema gaps.
+2. Obtain the 200-shipment history + filing template from the client.
+3. Move extraction to Procrastinate; schedule retention; add upload rate limits.
+4. Deploy to Mumbai; run the reviewer checklist.
 
 ## Demo
 
@@ -57,4 +69,4 @@ The evaluation number is the deterministic **fixture** extractor on synthetic da
 | Executive | `exec@demo.local` | `demo-exec-2026` |
 | Manager | `manager@demo.local` | `demo-manager-2026` |
 
-Start on **SHP-24811**; the 45 kg weight difference is already flagged. Open a line item to edit it, then History to see the correction logged.
+Start on **SHP-24811** (45 kg weight mismatch), open a line item to edit it, then **History** to see the correction. **SHP-24816** shows manual entry for an illegible bill of lading.

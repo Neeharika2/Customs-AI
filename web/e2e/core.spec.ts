@@ -108,6 +108,15 @@ test("executive uploads, reviews and submits; manager approves and exports", asy
   expect(content).toContain("Steel ball valve DN50");
   expect(download.suggestedFilename()).toMatch(/\.csv$/);
 
+  // Reopen voids the approval and returns the shipment to review.
+  await managerPage.goto(managerPage.url().replace("/export", "/review"));
+  await expect(managerPage.getByRole("button", { name: "Reopen" })).toBeVisible();
+  await managerPage.getByRole("button", { name: "Reopen" }).click();
+  await expect(managerPage.locator(".modal")).toBeVisible();
+  await managerPage.locator(".modal").getByRole("button", { name: "Reopen", exact: true }).click();
+  await expect(managerPage.getByText("Shipment reopened for review")).toBeVisible();
+  await expect(managerPage.locator(".pill-review")).toBeVisible();
+
   await managerContext.close();
 });
 

@@ -30,7 +30,10 @@ The seven-day slice is implemented and running locally. The following is measure
 | Review | Document + fields + evidence + checks in one screen; manual entry; keyboard flow |
 | Export | Configurable column map, CSV with BOM/CRLF/formula escaping, preview and gate |
 | Reporting | Correction rate by field and supplier, evidence coverage, first-pass acceptance |
-| Tests | 22 pytest, 3 Playwright end-to-end paths, evaluation harness |
+| Line items | Editable with per-line evidence, confidence and correction log |
+| History | Per-shipment activity drawer across uploads, corrections, decisions and exports |
+| Export template | Versioned editor in settings |
+| Tests | 31 pytest, 3 Playwright end-to-end paths, evaluation harness |
 | Evaluation | 260/260 fields on 24 synthetic documents (fixture extractor — see §16.3) |
 
 **Deviations from the design as originally written** are listed in §18.1. They are recorded rather than hidden. The most material: extraction runs as an in-process background task rather than a Procrastinate worker, and the local demo uses the fixture extractor because no GCP credentials are committed.
@@ -73,7 +76,7 @@ The same system hardened against 200 real shipments, with the client's actual fi
 | Retention | 180 days post-export, configurable |
 | Deployment | Single container image, one process, Mumbai region |
 
-Measured in the slice: 9 seeded shipments, 26 synthetic documents, 260 evaluated fields, 3 end-to-end paths. Fixture extraction is sub-second; Gemini latency and cost remain targets until a production key is configured. The **review-time** and **amendment-rate** targets are pilot measurements, not claims about this build.
+Measured in the slice: 9 seeded shipments, 26 synthetic documents, 260 evaluated fields, 31 backend tests, 3 end-to-end paths. Fixture extraction is sub-second; Gemini latency and cost remain targets until a production key is configured. The **review-time** and **amendment-rate** targets are pilot measurements, not claims about this build.
 
 ---
 
@@ -329,9 +332,12 @@ field(id, shipment_id, document_id, extraction_run_id, key,
       updated_by, updated_at)
       UNIQUE (document_id, key, line_no)
 
-line_item(id, shipment_id, line_no, description_raw, description_en NULL,
+line_item(id, shipment_id, document_id, line_no, description_raw, description_en NULL,
           hsn_code, qty NUMERIC(14,3), uom, unit_price NUMERIC(14,4),
-          amount NUMERIC(14,2), matched_line_id NULL, match_score NUMERIC(4,3))
+          amount NUMERIC(14,2), gross_weight_kg NUMERIC(14,3), net_weight_kg NUMERIC(14,3),
+          matched_line_id NULL, match_score NUMERIC(4,3),
+          status field_status, verification_level evidence_level, effective_conf,
+          page_idx, bbox JSONB NULL, quote TEXT, updated_by, updated_at)
 
 check(id, shipment_id, code, subject_key, severity check_severity,
       message, field_keys TEXT[], params JSONB, input_hash CHAR(64),
@@ -341,7 +347,9 @@ check_resolution(id, shipment_id, code, subject_key, input_hash CHAR(64),
                  resolved_by, reason, resolved_at)
                  UNIQUE (shipment_id, code, subject_key, input_hash)
 
-correction(id, field_id, old_value, new_value, actor_id, reason, created_at)
+correction(id, field_id NULL, line_item_id NULL, old_value, new_value,
+           actor_id, reason, created_at)
+           CHECK exactly one of field_id / line_item_id
 
 approval(id, shipment_id, actor_id, decision approval_decision,
          note, created_at)
@@ -957,6 +965,24 @@ The brief specifies desktop use. The review screen is therefore desktop-first. O
 - Model names. The user cares whether the value is right, not which model produced it.
 - Confidence as a percentage next to every field. A number implies precision the score does not have; the three-band treatment communicates the required action instead.
 
+### 11.10 As-built screens
+
+![](docs/screenshots/review.png)
+
+*The review workspace: document, fields, evidence and checks in one viewport.*
+
+![](docs/screenshots/line-editor.png)
+
+*Line items are editable; saving reruns every cross-document check.*
+
+![](docs/screenshots/history.png)
+
+*Per-shipment history: uploads, extraction, corrections, decisions and exports.*
+
+![](docs/screenshots/template-editor.png)
+
+*The export column map is data; saving creates a new template version.*
+
 ---
 
 ## 12. Export
@@ -1149,7 +1175,7 @@ The rules engine is where a defect reaches a customs filing, so it receives the 
 | Export | 6 | Header order, quoting, BOM, row count, template version |
 | E2E | 3 | Happy path, blocked path, manual-entry path |
 
-**Shipped in this slice:** 22 pytest cases covering the check catalogue, confidence gates, stale-resolution invalidation, authz, CSRF, cross-org access and CSV correctness; 3 Playwright paths. The larger counts above are the pilot target. The slice tests the highest-consequence logic rather than every permutation, and §16.6 says what that leaves untested.
+**Shipped in this slice:** 31 pytest cases covering the check catalogue, confidence gates, stale-resolution invalidation, line-item corrections, history, document removal, template versioning, pagination, reopen, authz, CSRF, cross-org access and CSV correctness; 3 Playwright paths. The larger counts above are the pilot target. The slice tests the highest-consequence logic rather than every permutation, and §16.6 says what that leaves untested.
 
 ### 16.3 Golden set and harness
 
@@ -1313,7 +1339,7 @@ The slice is honest about the gap between the design and the delivery. These are
 | Extraction transport | Procrastinate worker | FastAPI `BackgroundTasks` | Fewer moving parts for a single-instance demo. `process_document(document_id)` takes only an id, opens its own session and is idempotent, so moving it behind Procrastinate changes the enqueue call only. A process restart during extraction can strand a document in `PROCESSING`; that is the known cost. |
 | Model | Vertex AI Gemini | Fixture extractor locally; Vertex adapter present | No GCP credentials are committed. The UI labels the mode **Demo extractor**; the adapter is `api/app/extract/vertex.py`. The 260/260 evaluation measures the pipeline, not Gemini. |
 | Upload transport | Presigned `PUT` to S3 | Multipart `POST` to the API | Server-side magic-byte validation before storage, and 25 MB is small. The storage adapter already issues presigned reads; presigned writes are an adapter extension, not an architecture change. |
-| Retention | Scheduled deletion job | Retention modelled, deletion-on-request path; no scheduler | The scheduled purge is a productionisation item; documents are still deletable manually and the policy is explicit. |
+| Retention | Scheduled deletion job | `scripts/retention.py` CLI, dry-run by default; no scheduler | Wire it to a nightly job in the deployment platform. The policy, cutoff and object deletion are implemented and audited. |
 | XLSX | Deferred until the template arrives | CSV only | A9. XLSX is one `openpyxl` function behind the same column map. |
 | Reports | Per-field and per-supplier | Implemented, with small-sample suppression | Built, not cut. |
 | Settings | Manager-only | Implemented for tolerances, retention, template view and users | Built. |
@@ -1331,7 +1357,7 @@ The pattern: the boundaries that would be expensive to move later (job function,
 - Customs portal filing — the client's constraint is to keep the existing software.
 - Excel `.xlsx` formatting — deferred until the real template exists (A9).
 - A durable Procrastinate worker — the job boundary exists; the transport is an in-process background task in this slice.
-- The scheduled retention purge — policy and delete-on-request exist; the daily job does not.
+- The scheduled retention purge — the CLI exists and is dry-run by default; the nightly scheduler is not wired.
 - OCR fallback — gated on evidence coverage from real scans, not added speculatively.
 - Supplier analytics beyond the basic table — the review loop must be measured first.
 - Multi-organisation UI — schema supports it; the interface does not expose it.

@@ -79,6 +79,14 @@ cd web && pnpm install && pnpm dev
 
 Open **http://localhost:5173**.
 
+Production-like, one command (app + Postgres in Docker):
+
+```bash
+make prod        # docker compose up -d --build
+```
+
+That is the runtime: one app process plus Postgres, no separate worker. Cloud production swaps in managed Postgres, S3 and Vertex via environment variables — see `deployment.md` §0.
+
 ---
 
 ## Tests

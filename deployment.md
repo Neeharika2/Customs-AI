@@ -6,6 +6,38 @@ Two files matter alongside this guide: `TDD.md` (design) and `README.md` (overvi
 
 ---
 
+## 0. Production in one command
+
+```bash
+docker compose up -d --build
+```
+
+That starts the application and PostgreSQL. The image builds the SPA, runs Alembic migrations, then serves the API and static frontend on port 8000. `restart: unless-stopped` keeps both processes alive.
+
+**Yes — the runtime is one long-running process plus the database.** There is no separate worker in this slice; extraction runs inside the API process, and retention is a scheduled CLI, not a daemon.
+
+| Process | Count | Notes |
+|---|---|---|
+| App (uvicorn: API + SPA) | 1 | Background extraction runs in-process |
+| PostgreSQL | 1 | Managed service in a real deployment |
+| Retention purge | 0 daemons | `scripts/retention.py --apply`, scheduled by the platform |
+| Queue worker | 0 | Procrastinate is the next productionisation step |
+
+`uvicorn app.main:app` on its own in a terminal is **not** production: it dies with the terminal, has no TLS and no restart. Production means a supervisor — Docker, systemd, App Runner or Fly — plus managed Postgres, S3 and Vertex.
+
+The same image deploys to a cloud platform; only the environment changes:
+
+- managed PostgreSQL (`DATABASE_URL`)
+- `STORAGE_BACKEND=s3` with the Mumbai bucket
+- `AI_BACKEND=vertex` with ADC
+- real `SECRET_KEY`
+- TLS and domain from the platform
+- backups and monitoring outside the container
+
+The compose file is a single-host, production-like stack. It uses local disk by default because a self-contained demo should not require an AWS account; set `STORAGE_BACKEND=s3` and the `S3_*` variables to use object storage.
+
+---
+
 ## 1. Local development
 
 ### Prerequisites

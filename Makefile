@@ -1,4 +1,4 @@
-.PHONY: venv db seed api web build test e2e retention fmt
+.PHONY: venv db seed api web build prod test e2e retention fmt
 
 venv:
 	cd api && uv sync
@@ -15,6 +15,9 @@ api:
 
 web:
 	cd web && pnpm dev
+
+prod:
+	docker compose up -d --build
 
 build:
 	cd web && pnpm build

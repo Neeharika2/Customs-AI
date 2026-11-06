@@ -31,12 +31,12 @@ The core build and the core-completeness slice are done and tested. The TDD, PDF
 35 backend tests           passing
 3 Playwright E2E paths     passing (full flow incl. line edit, history and reopen;
                            manual entry; blocked export)
-eval harness               live Gemini: 267/268 fields (99.6%) on 25 synthetic docs
+eval harness               live Gemini: 267–268/268 fields (99.6–100%) over two runs on 25 synthetic docs
                            fixture baseline: 260/260 on 24 docs
 demo dataset               9 shipments, 26 PDFs, 2 manual-entry, 1 missing document
 ```
 
-The live 267/268 is Gemini on synthetic documents, not the client's 200. The fixture baseline is the offline path. TDD §16.3 and §18.1 state both.
+The live 267–268/268 is Gemini on synthetic documents, not the client's 200. The fixture baseline is the offline path. TDD §16.3 and §18.1 state both.
 
 ## Submission artifacts
 
@@ -49,7 +49,7 @@ The live 267/268 is Gemini on synthetic documents, not the client's 200. The fix
 
 These are not UI gaps; they need inputs or infrastructure:
 
-1. **200-shipment evaluation.** The live model scored 267/268 (99.6%) on 25 synthetic documents. Real client documents, their filing template and a Vertex project are still needed for the only honest 95% claim and confidence calibration.
+1. **200-shipment evaluation.** The live model scored 267–268/268 (99.6–100%) over two runs on 25 synthetic documents. Real client documents, their filing template and a Vertex project are still needed for the only honest 95% claim and confidence calibration.
 2. **OCR fallback decision.** Only after the real scan evidence rate is measured. Image-only pages currently go to manual entry.
 3. **Durable worker + scheduler.** Extraction runs as an in-process background task; the job function is isolated. Retention is a CLI, not a nightly job. Both are deployment wiring.
 4. **Production hardening.** Upload rate limits, optional malware scan, monitoring/alerts, backups/restore drill.

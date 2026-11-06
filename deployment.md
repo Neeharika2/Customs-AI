@@ -157,7 +157,7 @@ Prints per-field accuracy and evidence distribution for the synthetic golden set
 
 The live path is wired. A free Gemini Developer API key is acceptable for **synthetic documents only** — its free tier is used to improve Google's products, so never send client documents through it. Production uses Vertex AI (`AI_BACKEND=vertex`).
 
-The free tier for `gemini-3.5-flash` allows 20 requests/day; the 26-document demo exhausted it. For a full batch, use a paid key or Vertex, or split across model buckets. The measured live result is 267/268 fields (99.6%) on 25 synthetic documents.
+The free tier for `gemini-3.5-flash` allows 20 requests/day; the 26-document demo exhausted it. For a full batch, use a paid key or Vertex, or split across model buckets. The measured live result is 267–268/268 fields (99.6–100%) across two runs on 25 synthetic documents.
 
 ```bash
 cd api
@@ -302,7 +302,7 @@ Never commit any of these values. `.env.example` contains names and local defaul
 | Cross-document checks and gate | Real |
 | Correction history, approval, export | Real |
 | CSV generation in a configurable filing layout | Real |
-| Model extraction | **Live verified on synthetic** — 267/268 fields (99.6%); `developer` for synthetic, `vertex` for production; fixture offline default |
+| Model extraction | **Live verified on synthetic** — 267–268/268 fields (99.6–100%); `developer` for synthetic, `vertex` for production; fixture offline default |
 | Customs portal filing | Out of scope — the export is the hand-off |
 | Importer email intake | Out of scope — staff upload documents |
 | Payments / WhatsApp | Not present |

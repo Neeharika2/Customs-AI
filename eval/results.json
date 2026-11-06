@@ -1,10 +1,10 @@
 {
   "documents_compared": 25,
   "fields_compared": 268,
-  "correct": 267,
-  "accuracy": 99.63,
+  "correct": 268,
+  "accuracy": 100.0,
   "evidence": {
-    "EXACT": 219,
+    "EXACT": 220,
     "CONTAINED": 40,
     "CLAIMED": 8
   },
@@ -14,17 +14,10 @@
   "missing_documents": [
     "SHP-24815 bl"
   ],
-  "misses": [
-    {
-      "document": "SHP-24816 invoice",
-      "field": "declared_item_count",
-      "expected": "1",
-      "actual": "None"
-    }
-  ],
+  "misses": [],
   "extractor": "live",
   "models": {
-    "gemini-3.5-flash": 4,
-    "gemini-3.1-flash-lite": 21
+    "gemini-3.5-flash": 17,
+    "gemini-3.1-flash-lite": 8
   }
 }

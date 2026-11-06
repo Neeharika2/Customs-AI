@@ -102,16 +102,17 @@ The harness compares persisted fields against a generated golden set.
 **Live Gemini run — 5 November 2026 (synthetic documents only):**
 
 ```
-documents compared 25 · fields compared 268 · exact match 267/268 (99.6%)
-Models: gemini-3.1-flash-lite (21 docs) · gemini-3.5-flash (4 docs)
-Evidence: EXACT 219 · CONTAINED 40 · CLAIMED 8
-Manual entry: 1 (illegible B/L) · Missing: 1 (no B/L)
-Miss: declared_item_count on one invoice
+documents compared 25 · fields compared 268 · exact match 267–268/268 (99.6–100%)
+Runs: 267/268, then 268/268
+Models across runs: 3.5 Flash (4–17 docs) · 3.1 Flash Lite (8–21 docs)
+Evidence (latest): EXACT 220 · CONTAINED 40 · CLAIMED 8
+Manual: 1 (illegible B/L) · Missing: 1 (no B/L)
+Intermittent miss: declared_item_count on one invoice
 ```
 
 **Fixture baseline (offline):** 260/260 across 24 documents, all `EXACT`.
 
-Read both honestly. The live run is a real model result on **25 synthetic documents, not 200 client shipments**. The model split is a free-tier quota artifact: 3.5 Flash allows 20 requests/day, so the remainder used 3.1 Flash Lite. Production pins one Vertex model. The 200-shipment holdout evaluation is still the next step.
+Read both honestly. The live runs are real model results on **25 synthetic documents, not 200 client shipments**. The model split is a free-tier quota artifact: 3.5 Flash allows 20 requests/day, so the remainder used 3.1 Flash Lite. Production pins one Vertex model. The 200-shipment holdout evaluation is still the next step.
 
 ---
 

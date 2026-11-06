@@ -8,6 +8,7 @@ import uuid
 TEST_DB = "postgresql+psycopg://postgres@/customs_test?host=/tmp/opencode/pgdata"
 os.environ["DATABASE_URL"] = TEST_DB
 os.environ["APP_ENV"] = "test"
+os.environ["AI_BACKEND"] = "fixture"
 os.environ["DEMO_EXEC_PASSWORD"] = "test-exec"
 os.environ["DEMO_MANAGER_PASSWORD"] = "test-manager"
 

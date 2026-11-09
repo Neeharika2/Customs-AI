@@ -6,8 +6,8 @@
 |---|---|
 | **Client** | Company A — freight forwarder and customs broker, Navi Mumbai |
 | **Document** | Technical Design Document (TDD) |
-| **Version** | 1.2 — as-built |
-| **Date** | 8 November 2026 |
+| **Version** | 1.3 — as-built |
+| **Date** | 9 November 2026 |
 | **Author** | Build candidate |
 | **Status** | Implemented — 7-day slice; pilot work identified |
 | **GitHub repository** | https://github.com/Neeharika2/Customs-AI |
@@ -35,7 +35,7 @@ The seven-day slice is implemented and running locally. The following is measure
 | Export template | Versioned editor in settings |
 | Live model path | Gemini adapter wired behind `AI_BACKEND`; fixture remains the offline default |
 | Tests | 35 pytest, 3 Playwright end-to-end paths, evaluation harness |
-| Evaluation | **267–268/268 fields (99.6–100%)** on 25 synthetic documents with Gemini across two runs; fixture baseline 260/260 (see §16.3) |
+| Evaluation | Live and fixture results measured on the synthetic golden set; see §16.3 |
 
 **Deviations from the design as originally written** are listed in §18.1. They are recorded rather than hidden. The most material: extraction runs as an in-process background task rather than a Procrastinate worker, and the demo can run either the fixture or a Developer API key; Vertex credentials are not committed.
 
@@ -55,7 +55,7 @@ A vision model reads an invoice as well as any competitor's vision model. What i
 
 ### 1.1 What ships in this iteration
 
-A seven-day vertical slice, deployed and usable end to end:
+A seven-day vertical slice, implemented and usable end to end locally, and deployable as one container:
 
 create shipment → upload three documents → extract with evidence → cross-check → review side by side → correct → manager approves → export CSV in the filing layout.
 
@@ -77,7 +77,7 @@ The same system hardened against 200 real shipments, with the client's actual fi
 | Retention | 180 days post-export, configurable |
 | Deployment | Single container image, one process, Mumbai region |
 
-Measured in the slice: 9 seeded shipments, 26 synthetic documents, 268 evaluated fields across two live runs (267–268 correct), 35 backend tests, 3 end-to-end paths. Live extraction took roughly 10–20 seconds per document; fixture extraction is sub-second. Cost and latency at 1,100 shipments/month remain estimates until a production Vertex project is connected. The **review-time** and **amendment-rate** targets are pilot measurements, not claims about this build.
+Measured in the slice: 9 seeded shipments, 26 synthetic documents, 35 backend tests, 3 end-to-end paths. Live extraction took roughly 10–20 seconds per document; fixture extraction is sub-second. The evaluation result is in §16.3. Cost and latency at 1,100 shipments/month remain estimates until a production Vertex project is connected. The **review-time** and **amendment-rate** targets are pilot measurements, not claims about this build.
 
 ---
 
@@ -143,6 +143,8 @@ Deferral without a trigger is just an excuse. Each of these has a measurable con
 | Many-to-one line aggregation | Pilot data shows aggregated packing lists in more than 10% of shipments |
 | Supplier trend analytics | After first-pass acceptance is stable and measured |
 | Multi-organisation tenancy | A second legal entity onboards |
+| Durable extraction worker | A process restart strands a document in `PROCESSING` during the pilot |
+| Scheduled retention purge | The client requires automated deletion rather than a CLI |
 
 ---
 
@@ -154,14 +156,14 @@ The brief does not supply several inputs the design depends on. Each is stated, 
 |---|---|---|
 | **A1** | The filing software's Excel import layout is unavailable during this iteration. Column names and order are configurable in `export_template`. | The mapping layer absorbs the real template at week 3 without code changes to extraction or checks. |
 | **A2** | The brief's sample provides no bill of lading for SHP-24811. A realistic B/L is synthesised so the three-way check — the stated hard problem — is demonstrable. Missing-document behaviour is shown separately on SHP-24815. | The demo falls back to two-way checks; the engine is unchanged. All sample data is synthetic. |
-| **A3** | A billing-enabled Google Cloud project with Vertex AI access exists by day 1. | The public demo runs on the paid Gemini Developer API with synthetic documents only; Vertex remains the documented production path. Never used for real client documents. |
+| **A3** | A billing-enabled Google Cloud project with Vertex AI access exists by day 1. | The measured live runs used the free-tier Gemini Developer API on synthetic documents; a public demo may use a paid Developer API key. Neither is used for client documents. Vertex remains production. |
 | **A4** | A current Gemini Flash-class model is served from `asia-south1` (Mumbai). The exact model ID is pinned in configuration and recorded per extraction run. | Fall back to `asia-southeast1` and disclose the region change in this document and to the client. No silent substitution. |
 | **A5** | Documents are in English or Simplified Chinese. | Additional languages require prompt work; the schema and evidence model are unchanged. |
 | **A6** | Bills of lading commonly arrive after the invoice and packing list. | Late upload is a first-class flow (§10.5), not an error path. |
 | **A7** | Tolerances: weight ±0.5%, monetary ±0.01, quantity exact. | Values are organisation configuration, not constants; changing them is a settings edit. |
 | **A8** | All three document types are required before approval. | Per-importer requirements become a settings table in week 4. |
 | **A9** | CSV is sufficient for this iteration; XLSX follows when the template arrives. | XLSX is one `openpyxl` function behind the same mapping. |
-| **A10** | One organisation and two roles. Multi-tenant columns exist from day one. | Additional organisations are configuration, not migration. |
+| **A10** | One organisation and two roles. Accounts are provisioned by the organisation; there is no self-service registration. Multi-tenant columns exist from day one. | Additional organisations are configuration, not migration. Open registration would need invite, verification and abuse controls; it is deliberately out of scope. |
 
 ---
 
@@ -229,7 +231,7 @@ The boundary is deliberate even though the transport is simplified: `process_doc
 | Extraction job | Extract, verify evidence, persist results; checks recomputed after | Serving users |
 | Checks engine | Deterministic rules over normalised values | Calling the model |
 | Gate | Decide exportability from data, not UI state | Editing data |
-| SPA | Presentation, optimistic edits, keyboard flow | Business rules, authorisation |
+| SPA | Presentation, keyboard flow, server-authoritative edits | Business rules, authorisation |
 
 Business rules live on the server. The UI may disable a button, but the API refuses the operation independently.
 
@@ -243,28 +245,11 @@ Internal boundaries are enforced by module structure (`api/`, `domain/`, `extrac
 
 ### 5.5 Alternatives considered
 
-| Decision | Chosen | Rejected | Why |
-|---|---|---|---|
-| Application shape | Modular monolith | Microservices | Operational overhead with no scale justification |
-| Backend | FastAPI + Python | Next.js full-stack | PyMuPDF word-level boxes, Pydantic-constrained model output, richer document ecosystem |
-| Frontend | React SPA | Server-rendered templates | The review screen needs viewer state, keyboard flow and optimistic edits; templates would reimplement them |
-| Rendering | Server-side page PNGs | PDF.js in the browser | One render for PDFs, scans and photos; highlights are computed by us; no client-side PDF engine parsing untrusted files |
-| Queue | Background task now; Procrastinate boundary | Redis + Celery | One less service to operate for ~110 jobs/day; the 7-day slice keeps the job function isolated so the worker can be added without touching the pipeline |
-| Storage | S3 ap-south-1 | Cloudflare R2 | R2 jurisdictions are EU and US; it cannot guarantee India residency for client documents |
-| AI | Vertex AI, `asia-south1` | Gemini Developer API | Free tier trains on data; paid tier retains abuse-review access; Vertex provides enterprise terms and regional processing |
-| Field storage | One row per field | Wide columns per document | Enables per-field evidence, confidence, audit and `GROUP BY` accuracy |
-| Checks | Rows produced by pure functions | UI conditionals | Replayable, versioned, auditable, testable |
-| Extraction schema | Three document-specific schemas | One union schema | Fewer nullables, stronger validation, clearer prompts |
+The canonical alternatives and their consequences are consolidated in the decision log (§18). Keeping one table avoids two lists drifting apart.
 
 ### 5.6 Request and job lifecycle
 
-1. `POST /shipments` creates a draft.
-2. Upload is a multipart `POST` to the API in this slice. The API validates magic bytes, size and page limits before storing. In an S3 deployment the same storage adapter returns presigned read URLs and can be extended to presigned writes; direct upload was kept because it gives server-side validation before an object exists and 25 MB is small enough for a request worker.
-3. The document row is created with a SHA-256, and one extraction job is scheduled per document.
-4. The job loads the object, renders pages, extracts, verifies evidence, runs checks, and writes fields and checks in a single transaction.
-5. The shipment status is derived from its documents; the SPA polls `GET /shipments/{id}` every 1.2 seconds while any document is processing.
-6. Any field edit triggers a synchronous re-run of the checks for that shipment — checks are pure and complete in milliseconds.
-7. Export evaluates the gate server-side, renders CSV, stores it, and records an immutable export row.
+The request path is create → upload → enqueue extraction → persist fields and checks → review. Extraction runs after the upload response; the SPA polls shipment status while a document is processing. Field edits re-run checks synchronously; export evaluates the gate server-side before rendering the CSV. The two sequence diagrams in §10.1 and §10.3 are the detailed views.
 
 ---
 
@@ -290,80 +275,9 @@ org ──< audit_event
 
 ### 6.2 Tables
 
-```sql
-org(id, name, weight_tol_pct NUMERIC(5,3) DEFAULT 0.5,
-    value_tol NUMERIC(12,2) DEFAULT 0.01,
-    monthly_ai_cap_paise BIGINT, retention_days INT DEFAULT 180,
-    created_at)
+The schema is defined by the Alembic migration in `api/migrations/versions/ef3c96f95173_initial_schema.py`. The entity diagram above and the constraints in §6.4 are the parts a reviewer needs; the migration is the source of truth for column types, indexes and defaults.
 
-user(id, org_id, email CITEXT, password_hash TEXT, role user_role,
-     is_active BOOL, last_login_at, created_at)
-     UNIQUE (org_id, email)
-
-session(id UUID, user_id, token_hash, csrf_secret, ip INET,
-        user_agent TEXT, expires_at, revoked_at)
-
-supplier(id, org_id, name, country_code, aliases TEXT[], created_at)
-
-shipment(id, org_id, ref, supplier_id, status shipment_status,
-         incoterm, currency CHAR(3), created_by, approved_by,
-         approved_at, created_at, updated_at)
-         UNIQUE (org_id, ref)
-
-document(id, shipment_id, type document_type, storage_key, file_name,
-         mime_type, size_bytes, sha256, page_count, status document_status,
-         error_code, error_detail, uploaded_by, created_at)
-         UNIQUE (shipment_id, sha256)
-
-page(id, document_id, idx, image_key, width_px, height_px,
-     words_key NULL, source page_source)
-     UNIQUE (document_id, idx)
-
-extraction_run(id, document_id, model_id, prompt_version, schema_version,
-               content_sha256, status run_status, tokens_in, tokens_out,
-               cost_paise, latency_ms, raw_response_key, error_code,
-               created_at)
-               UNIQUE (document_id, content_sha256, prompt_version, schema_version)
-
-field(id, shipment_id, document_id, extraction_run_id, key,
-      line_no NULL, value_raw TEXT, value_norm TEXT,
-      model_conf NUMERIC(4,3), effective_conf NUMERIC(4,3),
-      verification_level evidence_level, page_idx, bbox JSONB NULL,
-      quote TEXT, status field_status,
-      updated_by, updated_at)
-      UNIQUE (document_id, key, line_no)
-
-line_item(id, shipment_id, document_id, line_no, description_raw, description_en NULL,
-          hsn_code, qty NUMERIC(14,3), uom, unit_price NUMERIC(14,4),
-          amount NUMERIC(14,2), gross_weight_kg NUMERIC(14,3), net_weight_kg NUMERIC(14,3),
-          matched_line_id NULL, match_score NUMERIC(4,3),
-          status field_status, verification_level evidence_level, effective_conf,
-          page_idx, bbox JSONB NULL, quote TEXT, updated_by, updated_at)
-
-check(id, shipment_id, code, subject_key, severity check_severity,
-      message, field_keys TEXT[], params JSONB, input_hash CHAR(64),
-      rule_version, computed_at)
-
-check_resolution(id, shipment_id, code, subject_key, input_hash CHAR(64),
-                 resolved_by, reason, resolved_at)
-                 UNIQUE (shipment_id, code, subject_key, input_hash)
-
-correction(id, field_id NULL, line_item_id NULL, old_value, new_value,
-           actor_id, reason, created_at)
-           CHECK exactly one of field_id / line_item_id
-
-approval(id, shipment_id, actor_id, decision approval_decision,
-         note, created_at)
-
-export(id, shipment_id, template_id, row_count, content_hash,
-       storage_key, created_by, created_at)
-       UNIQUE (shipment_id, template_id, content_hash)
-
-export_template(id, org_id, name, column_map JSONB, version, is_active)
-
-audit_event(id, org_id, actor_id, action, entity, entity_id,
-            meta JSONB, ip INET, created_at)          -- append-only, no update/delete
-```
+The business-critical tables are `shipment`, `document`, `field`, `line_item`, `check`, `check_resolution`, `approval`, `export` and `audit_event`. `extraction_run` exists to make accuracy measurable: it records the model, prompt and schema versions, token counts and the original response.
 
 ### 6.3 Enumerations
 
@@ -396,11 +310,11 @@ approval_decision  APPROVE | REJECT
 
 ### 6.5 Idempotency and concurrency
 
-- **Extraction.** The unique run key makes a retried job a no-op or a reuse. If the run exists and succeeded, the worker returns. Writes for one document happen in a single transaction: delete existing fields for that document, insert the new set. A crash leaves the previous state intact.
-- **Uploads.** The API hashes the received bytes and rejects a duplicate `(shipment_id, sha256)` with a link to the existing document instead of creating a second.
+- **Extraction.** The unique run key prevents duplicate run rows and duplicate spend. The current pipeline does not short-circuit on an existing run; a retry of a completed run would collide rather than silently reuse it. The reprocess path is intended for documents with no completed run. Writes for one document happen in a single transaction: delete existing fields for that document, insert the new set. A crash leaves the previous state intact.
+- **Uploads.** The API hashes the received bytes and rejects a duplicate `(shipment_id, sha256)`. Recovering a stuck document uses **Re-extract** on the existing document, not a second upload.
 - **Checks.** Recomputation is a full delete-and-insert for the shipment inside one transaction. Because checks are pure functions of field values, the result is deterministic.
 - **Exports.** `content_hash` is computed over the rendered CSV bytes. A second identical request returns the existing object.
-- **Concurrent review.** Two users editing the same field is possible but rare. Optimistic concurrency uses `field.updated_at`; a stale write returns `409` with both values rather than silently overwriting. Correctness beats convenience here — silent overwrite is exactly the failure mode being eliminated.
+- **Concurrent review.** Two users editing the same field is possible but rare. The slice is last-write-wins and records every change in the correction log; optimistic concurrency with a `409` is a production hardening item, not implemented.
 
 ### 6.6 Tenancy and authorisation
 
@@ -416,7 +330,7 @@ The design keeps `org_id` on every tenant table from day one (A10) even though o
 
 ### 6.8 Retention
 
-Documents, pages and raw model responses are deleted `retention_days` after export (default 180), by a scheduled job. Extracted values, corrections, checks and audit events are retained, because the accuracy record is the product's long-term asset and contains no document images. Deletion is logged. A delete-on-request endpoint removes an importer's personal data and any linked documents, and records that it did so.
+Documents, pages and raw model responses are deleted `retention_days` after export (default 180) by `scripts/retention.py`; the CLI is dry-run by default and scheduling it is a deployment step. Extracted values, corrections, checks and audit events are retained, because the accuracy record is the product's long-term asset and contains no document images. Deletion is logged. A delete-on-request endpoint removes an importer's personal data and any linked documents, and records that it did so.
 
 ---
 
@@ -430,7 +344,7 @@ Documents, pages and raw model responses are deleted `retention_days` after expo
 | 2 | Render | PDF | One PNG per page at 2000 px long edge | `FAILED` if unreadable |
 | 3 | Text layer | Text PDF | `words.json` with exact boxes | `NONE` for scans |
 | 4 | Normalise image | PNG | EXIF-corrected, downscaled JPEG | Proceed with original on error |
-| 5 | Extract | Pages + schema | JSON + quotes | Repair once, then `NEEDS_MANUAL_ENTRY` |
+| 5 | Extract | Pages + schema | JSON + quotes | Three transport attempts; schema failure → `NEEDS_MANUAL_ENTRY` (repair pass not implemented) |
 | 6 | Validate | JSON | Typed model | Field-level rejection |
 | 7 | Verify evidence | Values + quotes + text | `evidence_level` per field | `NONE` |
 | 8 | Persist | Everything | Fields, run, audit | Rollback, retry |
@@ -441,7 +355,7 @@ Documents, pages and raw model responses are deleted `retention_days` after expo
 - Magic-byte detection, not extension or MIME header. PDF (`%PDF-`), JPEG, PNG only.
 - ≤ 25 MB per file, ≤ 40 pages. Rejects are explicit and actionable.
 - Encrypted PDFs are rejected with a message asking for an unlocked copy. Silently failing on an encrypted file is worse than refusing it.
-- SHA-256 recorded at upload and reused as the cache key.
+- SHA-256 recorded at upload, used for duplicate detection and run identity.
 - No PDF JavaScript execution anywhere: pages are rasterised server-side, and the browser receives images, not the original PDF. This is a security property, not only a rendering choice.
 
 ### 7.3 Rendering and the text layer
@@ -452,25 +366,19 @@ For digitally generated PDFs, PyMuPDF's text layer provides exact word boxes at 
 
 ### 7.4 Caching
 
-Three caches, all keyed on content rather than time:
-
-| Cache | Key | Effect |
-|---|---|---|
-| Page render | `sha256(page bytes) + dpi` | Re-render never repeats |
-| Extraction | `sha256(file) + prompt_version + schema_version` | Re-upload of the same file costs nothing |
-| Checks | Recomputed on every edit; cheap enough not to cache | Always current |
+The slice stores rendered pages once per document and recomputes checks on every edit; it does not yet implement a cross-document extraction cache. The run identity is `(document_id, content_sha256, prompt_version, schema_version)`. `model_id` is recorded on the run but is not part of that key, so changing only the model does not create a new cache key. Add `model_id` to the key before running multi-model comparisons on the same document.
 
 ### 7.5 Failure taxonomy
 
 | Failure | Detected by | User sees | System does |
 |---|---|---|---|
-| Corrupt PDF | Parser exception | "This file could not be opened" | `FAILED`, re-upload offered |
+| Corrupt PDF | Parser exception | "This file could not be opened" | `FAILED`, replace the file |
 | Encrypted PDF | Password flag | "This PDF is password-protected" | `FAILED`, instruction shown |
 | Oversized | Size/page caps | Limit and current value | Rejected before upload completes |
 | Unreadable page | Low extraction + no quote | Page flagged, manual entry panel | `NEEDS_MANUAL_ENTRY` for the page |
 | Model timeout | Client timeout | "Taking longer than expected" + retry | 3 attempts with backoff |
-| Invalid JSON | Pydantic | Manual entry with the page visible | One repair pass, then manual |
-| Spend cap | Pre-flight check | Organisation limit message | Job queued, not silently dropped |
+| Invalid JSON | Pydantic | Manual entry with the page visible | No repair pass in this slice; manual entry |
+| Provider quota exhausted | Provider 429 | Manual entry with the reason | Retries, then manual entry |
 | Partial document set | Status derivation | Missing-document BLOCK | Shipment `NEEDS_REVIEW` |
 
 ### 7.6 Manual entry
@@ -491,7 +399,7 @@ Manual entry is a first-class state, not an error page. The page image is displa
 | Input | Rendered page images plus a document-type instruction |
 | Output | JSON constrained by a response schema derived from Pydantic |
 | Training on client data | Contractually excluded under Vertex terms |
-| Retention by provider | No persistent storage; small PDFs sent inline; Files API, if used, is transient (48 h) and never treated as storage |
+| Retention by provider | No persistent storage; small PDFs sent inline. Vertex uses Cloud Storage/ADC; the Developer API Files API is a transfer mechanism only (48 h) and is never storage. |
 | Logging | Prompt and response stored in our bucket for audit and evaluation, under the same retention rule |
 
 The **Gemini Developer API is not used for client documents**. Its free tier is explicitly used to improve Google's products, and the paid tier retains abuse-monitoring access. For a system whose selling point is confidentiality, that is disqualifying. It may be used for the public demo with synthetic documents, and this document would say so.
@@ -510,7 +418,7 @@ The live path is wired into the pipeline, not adjacent to it. `api/app/extract/a
 
 The review screen labels the mode **Demo extractor** or **Live model**, so the distinction is never hidden. If the model returns invalid JSON, times out, or fails schema validation, the document routes to `NEEDS_MANUAL_ENTRY` with the reason; it does not silently fall back to the fixture.
 
-The live path was exercised against the synthetic golden set twice: 25 of 26 documents extracted, 267–268/268 fields correct (99.6–100%), with 220 EXACT, 40 CONTAINED and 8 CLAIMED in the latest run. The free-tier quota forced a mix of 3.5 Flash and 3.1 Flash Lite. Details and the intermittent miss are in §16.3.
+The live path was exercised against the synthetic golden set; the full result, evidence distribution and the intermittent miss are in §16.3.
 
 ### 8.2 Why not OCR-first
 
@@ -547,13 +455,13 @@ Every field must cite a quote and a page. The system then attempts to verify it 
 | Level | Test | Score |
 |---|---|---|
 | `EXACT` | The quote is found verbatim in the native PDF text layer; the value appears within it | 1.0 |
-| `CONTAINED` | The value appears inside the model's quote on a scanned page, but the page has no text layer to verify against | 0.7 |
-| `CLAIMED` | A quote is present but cannot be independently located (OCR-free scan, handwriting, stamp) | 0.5 |
+| `CONTAINED` | The value appears inside the model's quote on a text-layer page, but the exact value or bounding box cannot be located | 0.7 |
+| `CLAIMED` | The page has no text layer (scan, photo, stamp); a quote is present but cannot be independently verified | 0.5 |
 | `NONE` | No quote, or the quote cannot be located at all | 0.0 |
 
 For `EXACT` fields the system derives the bounding box itself from the word positions — **never from model-supplied coordinates**. A model that returns a plausible box around the wrong text would produce a confident-looking lie; deriving the box from the verified quote makes that impossible.
 
-`EXACT` is only attainable for text PDFs. On scans the ceiling is `CONTAINED` or `CLAIMED`, and the UI says so. This is the honest cost of removing OCR from the first iteration.
+`EXACT` is only attainable for text PDFs. On scans the ceiling is `CLAIMED`, and the UI says so. This is the honest cost of removing OCR from the first iteration.
 
 ### 8.6 Confidence
 
@@ -572,22 +480,23 @@ The `min(evidence, format)` term is deliberate. A malformed date that appears ve
 |---|---|---|
 | ≥ 0.85 | Neutral | None, unless a check names the field |
 | 0.55–0.85 | Amber underline | Must be confirmed |
-| < 0.55 | Red rule | Must be corrected, or manually entered |
+| < 0.55 | Red rule | Must be confirmed or corrected by a human. `CLAIMED` is red by design; a correct value can be confirmed without editing. |
+
+`CLAIMED` scores at most 0.5, so it lands in the red band. Red means "a human must act", not "the value is wrong". The confirmation is audited; the gate accepts `CONFIRMED` or `CORRECTED`.
 
 **Any field referenced by an open WARN or BLOCK is flagged regardless of score.** A 0.97-confidence weight contradicted by the packing list is still a decision the human must make. Cross-document disagreement outranks extraction confidence.
 
 These are operational scores, not calibrated probabilities. The model's self-reported confidence is known to be poorly calibrated, and no claim is made otherwise. The value of the score is in ranking attention, and it is validated against the golden set (correlation between score band and correction rate), not against a probability claim.
 
-### 8.7 Repair and retry
+### 8.7 Retries and fallback
 
 | Attempt | Action |
 |---|---|
-| 1 | Standard extraction |
-| 2 (only on schema failure) | Same page, repair instruction: return valid JSON matching the schema; previous error shown |
-| 3 (only on transport failure) | Exponential backoff, 2 s / 8 s / 30 s |
-| Give up | Document `NEEDS_MANUAL_ENTRY`, reason recorded, page available for typing |
+| 1–3 | Transport retries for 429/500/503/timeout, with short backoff (2 s, 5 s, 8 s) |
+| Schema failure | No repair pass in this slice; document `NEEDS_MANUAL_ENTRY`, reason recorded |
+| Give up | Page remains available for manual entry; no silent fallback to the fixture |
 
-There is no third semantic attempt. Repeatedly asking a model to try harder is how cost spirals without improving accuracy.
+Three transport attempts, not three semantic attempts. Repeatedly asking a model to try harder is how cost spirals without improving accuracy. A schema repair pass is a production candidate; this slice routes schema failures to manual entry.
 
 ### 8.8 Cost and latency budget
 
@@ -603,7 +512,7 @@ There is no third semantic attempt. Repeatedly asking a model to try harder is h
 | Latency per document | 8–25 s typical, 60 s p95 |
 | Monthly AI cost against ₹70.29 lakh problem | under 0.1% |
 
-A per-organisation monthly cap (`monthly_ai_cap_paise`) prevents a retry loop or a compromised account from producing an unbounded bill. At 80% of the cap, the manager receives a warning; at 100%, new extraction jobs queue and the UI says why.
+A per-organisation monthly cap (`monthly_ai_cap_paise`) is modelled but **not enforced in this slice**. The provider quota is the current backstop. Enforce the cap before adding a production key; the intended behaviour is a warning at 80% and queued extraction at 100%.
 
 ### 8.9 Prompt injection
 
@@ -619,7 +528,7 @@ No LLM-based injection filter is trusted as a primary control. The human gate be
 
 ### 8.10 Versioning
 
-Every run records `model_id`, `prompt_version` and `schema_version`. Changing any of them creates new cache keys, so a prompt change cannot silently reuse old results and an accuracy comparison can attribute differences to a specific version. The evaluation harness groups results by these three fields; without them, "the model got worse" is unfalsifiable.
+Every run records `model_id`, `prompt_version` and `schema_version`. Prompt and schema changes alter the run key, so those changes cannot silently reuse old results. `model_id` is recorded but is not part of the current key; changing only the model on the same document/version would collide. Production should add `model_id` to the key. The evaluation harness groups results by all three fields; without them, "the model got worse" is unfalsifiable.
 
 ### 8.11 What happens when the AI is wrong
 
@@ -631,7 +540,7 @@ This is a stated client requirement, so it is specified rather than assumed.
 | Confident and wrong | Caught by a cross-check (the common case), or by the human review; correction is logged and attributed |
 | Unsure | Amber/red, blocks export until a human confirms |
 | Missing | `null` presented as an empty required field; blocks export |
-| Hallucinated | Quote cannot be located → `NONE` → red; a value with no quote never auto-passes |
+| Hallucinated | Quote cannot be located → `NONE` or `CONTAINED`; the field is red/amber and never auto-passes |
 | Unreadable | Manual entry with the page image adjacent |
 | Contradicted | Check names both sources and the delta; cannot be cleared by confidence |
 
@@ -661,21 +570,21 @@ Checks compare normalised values, never raw strings.
 
 Pure functions, deterministic, each returning `PASS | WARN | BLOCK`, a human sentence, and the fields it references.
 
-| # | Code | Rule | Severity | Tolerance |
+| # | Code | Rule | Severity | Owner |
 |---|---|---|---|---|
-| 1 | `LINE_AMOUNT` | `qty × unit_price = amount` per line | BLOCK | ±0.01 |
-| 2 | `INVOICE_TOTAL` | `Σ lines + freight + insurance + other − discount = total` | BLOCK | ±0.01 |
-| 3 | `LINE_COUNT` | Declared item count equals returned item count | BLOCK | exact |
-| 4 | `QTY_MATCH` | Invoice qty equals packing-list qty on matched lines | BLOCK | exact |
-| 5 | `WEIGHT_MATCH` | Gross weight agrees across invoice, packing list, B/L | **WARN** | ±0.5% configurable |
-| 6 | `PACKAGES_MATCH` | Package count agrees across all three documents | BLOCK | exact |
-| 7 | `CONTAINER_CHECK` | ISO 6346 check digit valid; no duplicates; count matches B/L | BLOCK | exact |
-| 8 | `PARTY_MATCH` | Buyer/consignee/notify consistent | WARN | similarity ≥ 0.90 |
-| 9 | `CURRENCY_MATCH` | Valid ISO 4217; consistent across documents | BLOCK | exact |
-| 10 | `INCOTERM_VALID` | Valid Incoterms 2020; freight terms consistent | WARN | exact |
-| 11 | `DATE_SANITY` | Invoice ≤ today; invoice ≤ B/L; age ≤ 90 days | WARN | exact |
-| 12 | `UOM_CONSISTENCY` | Same UoM basis per line; conversion applied once | WARN | exact |
-| 13 | `DOCS_COMPLETE` | All required document types present and extracted | BLOCK | exact |
+| 1 | `LINE_AMOUNT` | qty × price = amount (±0.01) | BLOCK | Executive |
+| 2 | `INVOICE_TOTAL` | lines + freight + insurance − discount = total (±0.01) | BLOCK | Executive |
+| 3 | `LINE_COUNT` | declared count = returned count | BLOCK | Executive / re-extract |
+| 4 | `QTY_MATCH` | invoice qty = packing qty | BLOCK | Executive |
+| 5 | `WEIGHT_MATCH` | gross weight across documents (±0.5%) | **WARN** | Executive ack. |
+| 6 | `PACKAGES_MATCH` | package count across documents | BLOCK | Executive |
+| 7 | `CONTAINER_CHECK` | ISO 6346; no duplicates | BLOCK | Executive |
+| 8 | `PARTY_MATCH` | supplier names; buyer vs consignee (≥0.90) | WARN | Executive |
+| 9 | `CURRENCY_MATCH` | ISO 4217; consistent | BLOCK | Executive |
+| 10 | `INCOTERM_VALID` | Incoterms 2020 valid | WARN | Executive |
+| 11 | `DATE_SANITY` | ≤ today; ≤ B/L; ≤ 90 days | WARN | Executive |
+| 12 | `UOM_CONSISTENCY` | same UoM per line | WARN | Executive |
+| 13 | `DOCS_COMPLETE` | all required docs extracted | BLOCK | Upload / manager |
 
 ### 9.3 Severity philosophy
 
@@ -685,32 +594,21 @@ A check that fires too often is worse than a check that fires late, because it t
 - **WARN** covers differences that are frequently legitimate: weight variance from pallets, party-name variants, dates that are merely old. These require acknowledgement with a reason, not correction.
 - The 45 kg gap on SHP-24811 (1.44%) is a WARN. In trade, that is often packaging. A system that calls it an error on day one gets switched off in week two. The executive records "pallet weight included in packing list" and moves on; the decision is logged and attributable.
 
-Severity is configuration, not code, so the client can tune it after the pilot without a release.
+Tolerances are organisation configuration; severities are fixed per rule in this slice. Making severity configurable is a pilot-era change, not a release-time one.
 
 ### 9.4 Line-item matching
 
-Descriptions never match exactly. The algorithm is explicit and testable:
+Descriptions never match exactly. The slice uses description similarity:
 
 ```
-normalise(description):
-  lower-case → strip punctuation → expand DN, SS, PCS, CTN, KG, W, V
-  → remove unit tokens → collapse whitespace → sort tokens
+score(a, b) = token_set_ratio(a.description, b.description) / 100
+accept ≥ 0.70, greedy one-to-one in invoice line order
 
-score(a, b) =
-    0.50 × (part number or HSN equal ? 1 : 0)
-  + 0.30 × token_set_ratio(a.description, b.description) / 100
-  + 0.20 × (a.qty == b.qty ? 1 : 0)
-
-for each invoice line:
-    candidates = packing lines with score ≥ 0.75
-    if exactly one  → match
-    if more than one → AMBIGUOUS, flagged, not auto-matched
-    if none          → UNMATCHED_INVOICE  (BLOCK: "not on packing list")
-
-packing lines left over → UNMATCHED_PACKING (WARN: "packed but not invoiced")
+invoice line with no match → BLOCK "not on packing list"
+packing line left over       → WARN  "packed but not invoiced"
 ```
 
-Greedy one-to-one, deterministic ordering by invoice line number. Ambiguity is surfaced, not resolved by a tie-breaker, because a wrong automatic match is worse than a question. Many-to-one aggregation (one packing line covering several invoice lines) is explicitly out of scope for this iteration (§3.3); it fails as `UNMATCHED_*` rather than guessing.
+The slice picks the best candidate above 0.70; it does not detect two close candidates. The production target is the weighted matcher — 0.5 × HSN/part-number equality, 0.3 × token-set similarity, 0.2 × quantity equality — with explicit ambiguity detection. Many-to-one aggregation is out of scope (§3.3) and fails as `UNMATCHED_*` rather than guessing.
 
 ### 9.5 Check resolution and staleness
 
@@ -724,13 +622,13 @@ When a value changes, the hash changes, the old resolution no longer applies, an
 exportable(shipment) =
       all required documents EXTRACTED
   AND every required field is CONFIRMED or CORRECTED
-  AND no open BLOCK
-  AND every WARN has a resolution matching its current input_hash
+  AND every open check is resolved for its current input_hash
+      (WARN acknowledged with a reason, or BLOCK overridden by a manager)
   AND shipment.status = READY
-  AND approved_at > max(field.updated_at)
+  AND no field or line item changed after approved_at
 ```
 
-The last clause is the one that matters most. **Any edit after approval voids the approval.** A manager who approves and then watches an executive quietly change a weight has not approved that weight. The API enforces this; the UI simply reflects it.
+A manager's BLOCK override is a resolution bound to the same `input_hash`; the original check row is preserved. A changed value changes the hash and reopens the check. **Any field or line-item edit voids the approval** by moving the shipment back to `NEEDS_REVIEW` and clearing `approved_at`; the timestamp clause is a second line of defence. As built, the stale-approval query covers fields. Production should include `line_item.updated_at` and `check_resolution.resolved_at`, and treat any post-approval resolution as approval-voiding.
 
 The gate is evaluated server-side on export and returns the complete list of unmet conditions, each with a link to the field or document. The UI checklist is a rendering of that response, not a parallel implementation.
 
@@ -746,12 +644,10 @@ Checks contain no clock, no randomness and no network calls. Given the same fiel
 
 ### 9.8 Known limits
 
-- **B/L weights are often rounded or include container tare.** The check compares declared cargo gross weight, and the UI explains the delta rather than asserting an error.
-- **Currency conversion is not performed.** Documents are expected to agree in currency; if they do not, that is a BLOCK, not a conversion problem.
-- **No HSN validation beyond format.** Classification is out of scope by the brief.
+- **B/L weights are often rounded or include container tare.** The check compares declared cargo gross weight and explains the delta.
+- **Currency conversion is not performed.** A currency disagreement is a BLOCK.
+- **No HSN validation beyond format.** Classification is out of scope.
 - **Handwriting and stamps** are outside reliable extraction; they route to manual entry.
-- **Many-to-one packing aggregation** is unsupported (§3.3).
-- **Tolerance is global per organisation**, not per supplier. Per-supplier tolerances are a natural week-4 extension once the pilot shows which suppliers need them.
 
 ---
 
@@ -786,23 +682,7 @@ Uploads are validated before an object is visible to the review path. A 25 MB ca
 
 ### 10.2 Review, correction, recheck
 
-```
-Executive                SPA                     API                  Postgres
-    │                     │                        │                     │
-    │ open shipment ─────▶│ GET /shipments/{id}    │                     │
-    │                     │───────────────────────▶│                     │
-    │                     │◀── fields + checks ────│                     │
-    │ click field ───────▶│ show page + quote      │                     │
-    │ type correction ───▶│ PATCH /fields/{id}     │                     │
-    │                     │───────────────────────▶│ validate + authorise│
-    │                     │                        │ update field ──────▶│
-    │                     │                        │ log correction ────▶│
-    │                     │                        │ recompute checks ──▶│
-    │                     │◀── new checks + gate ──│                     │
-    │                     │ optimistic UI reconciles│                    │
-```
-
-Editing is optimistic in the UI and authoritative on the server. If the recomputed gate differs from the optimistic assumption, the server response wins and the action bar updates. The executive never sees a state the server would refuse.
+Editing is server-authoritative: a field edit validates the value, updates the field, writes a correction, re-runs every check and returns the new gate. The UI applies the server response; there is no optimistic assumption to reconcile, so the executive never sees a state the server would refuse.
 
 ### 10.3 Submit, approve, export
 
@@ -823,7 +703,7 @@ Executive          API                   Manager          Export service
     │◀── file ─────│                       │                 │
 ```
 
-The gate is evaluated twice: at submit and again at export. The second evaluation is not redundant — approval may be hours old and a field may have changed, which the `approved_at > max(updated_at)` clause catches.
+The gate is evaluated twice: at submit and again at export. The second evaluation is not redundant — approval may be hours old and a field or line item may have changed; the API voids approval on edit and the gate re-checks the approval timestamp.
 
 ### 10.4 Failure → manual entry
 
@@ -875,37 +755,13 @@ Eight routes, matching the brief's 6–8 screen expectation. Extraction progress
 
 ### 11.2 Review screen anatomy
 
-```
-┌──────────────────────────────────────────────────────────────────────────┐
-│ SHP-24811 · Company B · USD · FOB        NEEDS REVIEW    [Submit for appr.]│
-├─────────────────────────────┬────────────────────────────────────────────┤
-│ [INV] [PL] [BL]   −  100%   │  INVOICE                         3/3 pages │
-│                             │  ─────────────────────────────────────────  │
-│  ┌───────────────────────┐  │  Invoice number   INV-24811           ✓     │
-│  │                       │  │  Invoice date     20 Oct 2026         ✓     │
-│  │      page image       │  │  Currency         USD                 ✓     │
-│  │                       │  │  Incoterm         FOB                 ✓     │
-│  │   ┌───────────────┐   │  │  Gross weight     3,120 kg            ✓     │
-│  │   │ highlight     │   │  │                                            │
-│  │   └───────────────┘   │  │  LINE ITEMS                       3 / 3    │
-│  │                       │  │  LED panel light 40W  2,400  6.80  16,320  │
-│  └───────────────────────┘  │                                            │
-│                             │  CHECKS                          2 open   │
-│  Source · page 1            │  ⚠ Weight 3,120 vs 3,165  +1.44%   [ack]   │
-│  "Gross weight 3120.00 KGS" │  ⛔ Packages 120 vs 118            [fix]   │
-│                             │                                            │
-├─────────────────────────────┴────────────────────────────────────────────┤
-│ ✓ Confirm all high-confidence    ·    3 fields need you    [Submit]       │
-└──────────────────────────────────────────────────────────────────────────┘
-```
-
 Design rules, each with a reason:
 
 - **Document and fields share the viewport.** Alternating between tabs destroys the comparison task the screen exists for.
 - **The document is never smaller than 40% of the width.** It is evidence; shrinking it makes the quotation useless.
 - **The quote sits under the active field.** A highlight alone is ambiguous when a page contains four similar numbers.
 - **Checks are adjacent to fields, not on another page.** The executive should not have to remember a warning while scrolling.
-- **One primary action.** Submit/appeal lives in the sticky bar; everything else is secondary.
+- **One primary action.** Submit for approval lives in the sticky bar; everything else is secondary.
 
 ### 11.3 Confidence visual language
 
@@ -913,7 +769,7 @@ Design rules, each with a reason:
 |---|---|
 | Accepted | Neutral text; no colour, no badge |
 | Low confidence | 2 px amber underline + amber dot |
-| Requires correction | 2 px red left rule + red dot |
+| Requires action | 2 px red left rule + red dot |
 | Check-contradicted | Amber/red row tint plus the check chip |
 | Confirmed | Small check glyph, neutral |
 
@@ -921,35 +777,11 @@ The screen is **not** painted green when things are fine. Green fills make a nor
 
 ### 11.4 Interaction
 
-| Key | Action |
-|---|---|
-| `Tab` / `Shift+Tab` | Next / previous field, skipping confirmed fields in "uncertain only" mode |
-| `Enter` | Confirm field and advance |
-| `Cmd/Ctrl + Z` | Undo last correction (server-side, via correction log) |
-| `J` / `K` | Next / previous document |
-| `1` `2` `3` | Jump to invoice / packing list / B/L |
-| `Cmd/Ctrl + Enter` | Submit for approval |
-| `?` | Shortcut overlay |
-
-Every action is one click or one key. The submit bar states exactly how many fields need attention and links to the first one.
+Implemented shortcuts: `J`/`K` for the next/previous document, `1`/`2`/`3` for invoice/packing list/B/L, `Cmd/Ctrl+Enter` to submit when the gate is clear, and `Escape` to clear the active field. Full keyboard field traversal and undo are not implemented; the correction log is the undo record. The submit bar states exactly how many fields need attention.
 
 ### 11.5 Design system
 
-| Token | Value | Use |
-|---|---|---|
-| `canvas` | `#FAFAF8` | Page background |
-| `surface` | `#FFFFFF` | Panels, tables |
-| `ink` | `#14161A` | Primary text |
-| `muted` | `#6B6F76` | Secondary text, metadata |
-| `border` | `#E6E4DE` | Dividers, inputs |
-| `accent` | `#0F6B5C` | Primary buttons, focus rings |
-| `warn-bg` / `warn-fg` | `#FEF3C7` / `#B45309` | Warnings |
-| `block-bg` / `block-fg` | `#FEE4E2` / `#B42318` | Blocking |
-| `ok-fg` | `#067647` | Confirmation glyphs only |
-
-Type: Inter (or Geist), 14 px base, 12 px metadata, 20/28 headings. **Tabular numerals** on every amount, quantity and weight so columns align and digits do not jitter during edits. Spacing on an 8 px rhythm, 4 px base unit, 6 px radii, no shadows except dialogs. Table rows 44 px, review rows 40 px.
-
-The palette is warm and low-chroma because the screen is viewed for eight hours. High-contrast pure white and saturated primaries are fatiguing and make state colours compete for attention.
+The design system is a warm, low-chroma palette with one teal accent, Inter with **tabular numerals** on amounts and weights, and an 8 px spacing rhythm. Colour is reserved for attention: accepted fields are neutral, amber means confirm, red means act. Tokens and layout live in `web/src/styles.css`.
 
 ### 11.6 States
 
@@ -963,24 +795,13 @@ Extraction has its own progress vocabulary: queued, reading, extracting, checkin
 
 ### 11.7 Accessibility
 
-- Contrast ≥ 4.5:1 for text, ≥ 3:1 for UI boundaries.
-- State is never conveyed by colour alone: an icon and a text label accompany every amber/red state.
-- Full keyboard operation of the review screen; focus visible at 2 px.
-- Form fields have persistent labels, not placeholders as labels.
-- The document viewer supports browser zoom without breaking the layout.
+Contrast meets 4.5:1 for text, state is never conveyed by colour alone, form fields keep persistent labels, and the review screen supports keyboard document switching. A full screen-reader and keyboard-field-traversal audit is not done.
 
 ### 11.8 Desktop first, mobile honest
 
-The brief specifies desktop use. The review screen is therefore desktop-first. On narrow viewports it stacks (viewer above fields) rather than pretending a three-pane layout fits. The shipment list, approval queue and export preview are fully usable on a phone, because managers approve away from their desks. No feature is desktop-only by accident; the one exception is deliberate and documented.
+The brief specifies desktop use. The review screen is desktop-first. On narrow viewports it stacks (viewer above fields), the header and action bar wrap, and the line-item table scrolls horizontally. The shipment list, detail, approval and export screens are usable at phone width. No feature is desktop-only by accident; the dense review workspace is the documented exception.
 
-### 11.9 What is deliberately not shown
-
-- Raw model JSON. Executives work in business fields; a JSON viewer invites support requests and exposes prompt structure.
-- Token counts and cost per document. Operational data belongs in admin reporting, not the review screen.
-- Model names. The user cares whether the value is right, not which model produced it.
-- Confidence as a percentage next to every field. A number implies precision the score does not have; the three-band treatment communicates the required action instead.
-
-### 11.10 As-built screens
+### 11.9 As-built screens
 
 ![](docs/screenshots/review.png)
 
@@ -994,10 +815,6 @@ The brief specifies desktop use. The review screen is therefore desktop-first. O
 
 *Per-shipment history: uploads, extraction, corrections, decisions and exports.*
 
-![](docs/screenshots/template-editor.png)
-
-*The export column map is data; saving creates a new template version.*
-
 ---
 
 ## 12. Export
@@ -1008,8 +825,8 @@ Extraction never knows the filing format. A template maps internal keys to exter
 
 ```json
 {
-  "name": "Shipping Bill — default",
-  "version": 3,
+  "name": "Bill of Entry — default",
+  "version": 1,
   "columns": [
     {"header": "Invoice No",   "source": "invoice_number",  "required": true},
     {"header": "Invoice Date", "source": "invoice_date",    "format": "%d/%m/%Y"},
@@ -1023,7 +840,7 @@ Extraction never knows the filing format. A template maps internal keys to exter
 
 A template is versioned. Changing it does not rewrite history: an export records the template version it used, so a file can always be reproduced.
 
-**A1** is the honest limitation: without the client's real template, this mapping is seeded with a plausible Shipping Bill layout. The architecture guarantees the template can be replaced without touching extraction or checks; it does not guarantee column-name compatibility with software nobody has shown us.
+**A1** is the honest limitation: without the client's real template, this mapping is seeded with a plausible **Bill of Entry** layout. The architecture guarantees the template can be replaced without touching extraction or checks; it does not guarantee column-name compatibility with software nobody has shown us.
 
 ### 12.2 CSV format
 
@@ -1061,12 +878,13 @@ XLSX is one function behind the same column map, using `openpyxl`. It is deferre
 | Override BLOCK with reason | — | ✓ |
 | Export READY shipment | ✓ | ✓ |
 | Reports | — | ✓ |
-| Settings, templates, users | — | ✓ |
-| Delete documents before retention | — | ✓ (audited) |
+| Settings and export templates | — | ✓ |
+| View users | — | ✓ |
+| Delete documents before retention | ✓ | ✓ (audited) |
 
 Enforcement is a FastAPI dependency plus a row-level check, not a hidden button. Tests assert the 403/404 behaviour for every restricted route. The UI hides what a role cannot do; the API refuses it independently.
 
-A manager may also act as an executive. There is no separate "manager-only" shipment state that blocks routine work.
+A manager may also act as an executive. There is no separate "manager-only" shipment state that blocks routine work. Accounts are provisioned by the organisation; there is no self-service registration. The seed creates one executive and one manager.
 
 ---
 
@@ -1089,12 +907,12 @@ A manager may also act as an executive. There is no separate "manager-only" ship
 ### 14.2 Application controls
 
 - Argon2id password hashing; no password in logs or error responses.
-- Server-side sessions with hashed tokens; logout revokes; password change revokes all.
+- Server-side sessions with hashed tokens; logout revokes. There is no password-change flow in this slice.
 - CSRF double-submit on all mutations.
-- Input validation at the Pydantic boundary; every ID is a UUID and scoped.
+- Input validation at the Pydantic boundary; every ID is a UUID and org-scoped.
 - Output encoding by React; no `dangerouslySetInnerHTML` anywhere.
 - Security headers: HSTS, `X-Content-Type-Options`, `Referrer-Policy`, strict CSP for the SPA.
-- Dependency and container scanning in CI.
+- Dependency and container scanning are planned CI gates, not wired in this slice.
 
 ### 14.3 AI data handling
 
@@ -1102,7 +920,7 @@ A manager may also act as an executive. There is no separate "manager-only" ship
 |---|---|
 | Does the provider train on our data? | No — Vertex AI enterprise terms |
 | Where is inference performed? | `asia-south1`, recorded per run |
-| Is data retained by the provider? | No persistent retention; Files API is transient (48 h) and not used as storage |
+| Is data retained by the provider? | No persistent retention. Vertex uses Cloud Storage/ADC; the Developer API Files API is transient (48 h) and is never used as storage. |
 | What is sent? | Rendered page images and the extraction instruction only — no user identity, no database rows |
 | Are importer contacts sent? | Only if printed on the document; no separate PII payload is attached |
 | Is the raw response stored? | Yes, in our bucket, under the same retention and access rules as the document |
@@ -1117,7 +935,7 @@ A manager may also act as an executive. There is no separate "manager-only" ship
 | Storage limitation | 180-day default retention post-export; scheduled deletion; configurable |
 | Access and correction | Delete-on-request endpoint; correction history records all changes |
 | Security safeguards | Encryption in transit and at rest; RBAC; audit |
-| Breach notification | Runbook in §17.6; 72-hour internal escalation |
+| Breach notification | Runbook in §17.6; notify the client's DPO within 24 hours and support the 72-hour DPDP notification |
 | Grievance | Client's existing channel; system provides the audit trail |
 
 The client is the data fiduciary; we are a processor. That relationship, the DPA and the sub-processor list (Google Cloud, AWS) must be papered before real documents are processed. The TDD can specify the controls; it cannot substitute for the contract.
@@ -1137,26 +955,26 @@ No secret is committed. Configuration arrives through environment variables; `.e
 | API p95 latency (list, detail) | < 400 ms | Request logs |
 | Field save p95 | < 300 ms | Request logs |
 | Extraction p95 | < 60 s/document | Job records |
-| Queue depth | < 20 during business hours | Queue metrics |
+| Extraction backlog | < 20 documents during business hours | Job records |
 | Error rate | < 0.5% of requests | Logs |
 | Export generation p95 | < 3 s | Export records |
 
 ### 15.2 Failure behaviour
 
-- **Provider outage.** Jobs retry with backoff; after three failures the document goes to manual entry with an explanation. The system degrades to a typing tool rather than stopping work.
+- **Provider outage.** Three transport attempts with short backoff; then the document goes to manual entry with an explanation. The system degrades to a typing tool rather than stopping work.
 - **Database unavailable.** API returns 503 with a retry hint; in-flight jobs fail and retry.
 - **S3 unavailable.** Uploads fail before metadata is recorded; no orphan rows.
-- **Worker down.** Jobs accumulate in Postgres; the UI shows queued, not "processing", and the status is truthful.
+- **API process down.** In-process extraction stops with it; documents remain visibly queued/processing and can be re-extracted. A durable worker is the fix.
 - **Partial shipment.** Per-document status means one failure never hides two successes.
 
 ### 15.3 Cost controls
 
 | Control | Value |
 |---|---|
-| Monthly AI cap per org | Configurable; default sized to 3× expected usage |
-| Retry ceiling | One repair, three transport attempts |
+| Monthly AI cap per org | Configured, **not enforced in this slice**; provider quota is the backstop |
+| Retry ceiling | Three transport attempts; no schema repair pass in this slice |
 | Page cap | 40 pages/document; rejects beyond |
-| Cache | Content-hash reuse for pages and extraction |
+| Cache | Rendered pages stored once per document; no cross-document extraction cache yet |
 | Model choice | Flash class, not Pro, for extraction; Pro reserved for evaluation experiments |
 
 ### 15.4 Observability
@@ -1164,7 +982,7 @@ No secret is committed. Configuration arrives through environment variables; `.e
 - Structured JSON logs with `request_id`, `org_id`, `user_id`, `shipment_id`; never document content.
 - Job metrics: queued, duration, attempts, outcome, cost.
 - Business metrics: shipments by status, fields confirmed without edit, checks by code and severity, export count.
-- Alerts: queue depth > 50 for 15 minutes, extraction failure rate > 10% over an hour, spend cap at 80%, 5xx rate > 1%.
+- Alerts: extraction backlog > 50 for 15 minutes, extraction failure rate > 10% over an hour, spend cap at 80% once enforced, 5xx rate > 1%.
 
 ---
 
@@ -1172,7 +990,7 @@ No secret is committed. Configuration arrives through environment variables; `.e
 
 ### 16.1 Strategy
 
-The rules engine is where a defect reaches a customs filing, so it receives the most testing. Extraction is tested against recorded responses, not live calls, so CI is deterministic and the evidence/demotion logic is proven without spending tokens. End-to-end tests cover the three paths that matter: clean export, blocked export, manual entry.
+The rules engine is where a defect reaches a customs filing, so it receives the most testing. Extraction is tested against recorded responses, not live calls, so the tests are deterministic and the evidence/demotion logic is proven without spending tokens. End-to-end tests cover the three paths that matter: clean export, blocked export, manual entry.
 
 ### 16.2 Test matrix
 
@@ -1238,23 +1056,24 @@ manual-entry rate     = documents NEEDS_MANUAL_ENTRY / documents processed
 
 Extraction accuracy and discrepancy quality are reported separately. A system can extract every number correctly and still compare them wrongly; conflating the two hides the failure the client is paying to prevent.
 
-### 16.5 CI gates
+### 16.5 Quality gates
 
-- All unit and integration tests pass.
-- Type check (mypy strict on `checks/` and `domain/`, pyright on the SPA).
-- Lint and format.
-- Migration applies cleanly to a fresh database and rolls back.
-- OpenAPI diff fails if generated TypeScript types are stale.
-- Secret scan.
-- Container build succeeds.
+CI is not wired in this slice. The local gates before submission are:
+
+- `pytest` passes (35 cases).
+- `pnpm build` type-checks the SPA with `tsc`.
+- Ruff lint and format on the API.
+- Alembic applies cleanly to a fresh database.
+- Secret scan and a clean `git status`.
+- `docker compose build` succeeds.
 
 ### 16.6 What is not tested, and why
 
 - **Live model output in CI.** Non-deterministic and costly; covered by recorded fixtures and the separate eval harness.
 - **Real-world document variety.** Nine synthetic shipments cannot represent 200 real ones. This is the largest known gap and the first task of week 3.
-- **Durable job execution.** The slice runs extraction as an in-process background task. A restart during extraction can leave a document `PROCESSING`; the state is visible and the document can be re-uploaded. A durable worker is the first productionisation item.
 - **Load beyond 14 users.** The architecture will hold, but it is unmeasured; load testing is week 5.
 - **DPDP legal sufficiency.** Controls are implemented; compliance is a contractual and legal question, not a test.
+- **Browser coverage.** Three Playwright paths cover the main flows; mobile layout is checked manually at 390 px, not in CI. A broader browser matrix is a pilot task.
 
 ---
 
@@ -1270,54 +1089,11 @@ Extraction accuracy and discrepancy quality are reported separately. A system ca
 
 ### 17.2 Packaging
 
-One image, one entrypoint in this slice:
-
-```dockerfile
-# web + API
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-The SPA is built in a multi-stage build and copied to `app/static`. One origin means no CORS, one session cookie, one CSP. Alembic runs before uvicorn in the container entrypoint.
-
-The production path adds a second entrypoint from the same image:
-
-```
-procrastinate --app=app.worker.app worker
-```
-
-That worker is not enabled in this slice; see §18.1.
+One image, one process in this slice. The SPA is built in a multi-stage Docker build and served by FastAPI from `app/static`; Alembic runs before uvicorn. One origin means no CORS, one session cookie and one CSP. The Procrastinate worker is the production split, not enabled here (§18.1).
 
 ### 17.3 Environment variables
 
-Names only; values live in the platform secret store.
-
-```
-APP_ENV
-APP_BASE_URL
-SECRET_KEY
-DATABASE_URL
-STORAGE_BACKEND
-LOCAL_STORAGE_DIR
-S3_ENDPOINT
-S3_REGION
-S3_BUCKET
-S3_ACCESS_KEY_ID
-S3_SECRET_ACCESS_KEY
-GOOGLE_CLOUD_PROJECT
-VERTEX_LOCATION
-VERTEX_MODEL
-GOOGLE_APPLICATION_CREDENTIALS
-AI_BACKEND
-GEMINI_API_KEY
-GEMINI_MODEL
-AI_MONTHLY_CAP_PAISE
-MAX_UPLOAD_MB
-MAX_PAGES
-SESSION_TTL_HOURS
-RETENTION_DAYS
-DEMO_EXEC_PASSWORD
-DEMO_MANAGER_PASSWORD
-```
+The authoritative list, with required/optional status, is in `deployment.md` §4. The application reads them through `api/app/config.py`; values live in the platform secret store and are never committed.
 
 ### 17.4 Migrations and backups
 
@@ -1335,11 +1111,13 @@ Images are immutable and tagged by commit. Rollback is a redeploy of the previou
 
 | Symptom | First check | Action |
 |---|---|---|
-| Extraction not progressing | API process health; document status | Restart the API; the job is idempotent and a manual re-upload recovers |
-| Extraction failing widely | Vertex quota, region status, spend cap | Check cap; fall back to manual entry; do not disable the gate |
+| Extraction not progressing | API process health; document status | Restart the API; use **Re-extract** on the document. Re-uploading the same file is rejected by the sha256 constraint |
+| Extraction failing widely | Provider quota, region status | Check quota; fall back to manual entry; do not disable the gate |
 | Upload failures | Bucket policy, storage backend, disk path | Verify credentials and `LOCAL_STORAGE_DIR`; check disk space |
 | Export rejected by filing software | Template version, column order, BOM | Reproduce with preview; roll template version |
-| Suspected data leak | Audit log, presigned URL TTL, access logs | Revoke sessions, rotate keys, follow breach runbook |
+| Suspected data leak | Audit log, presigned URL TTL, access logs | Revoke sessions, rotate keys, follow the breach runbook below |
+
+**Suspected data breach.** Preserve logs and audit events; revoke all sessions and rotate `SECRET_KEY`, database and storage credentials; identify the affected org, shipments and objects from the audit/access logs; notify the client's DPO within 24 hours and support their 72-hour DPDP notification; restore from a known-good backup if integrity is affected; record the incident and the actions taken.
 
 ---
 
@@ -1359,6 +1137,7 @@ Images are immutable and tagged by commit. Rollback is a redeploy of the previou
 | D10 | CSV first, XLSX later | Both now | Honest about the missing template; no false compatibility claim |
 | D11 | S3 ap-south-1 | Cloudflare R2 | Small storage cost; India residency |
 | D12 | No confidence percentage in UI | Show 0–1 score everywhere | Avoids false precision; action-oriented bands |
+| D13 | Background task now; Procrastinate boundary | Redis + Celery | One less service for ~110 jobs/day; the job function is isolated so the worker can be added without touching the pipeline |
 
 ### 18.1 As-built deviations
 
@@ -1367,13 +1146,19 @@ The slice is honest about the gap between the design and the delivery. These are
 | Area | Designed | Built | Why, and what closes the gap |
 |---|---|---|---|
 | Database session | SQLAlchemy async | SQLAlchemy sync, FastAPI threadpool | The workload is small and I/O-bound; sync sessions remove an async failure surface from the 7-day slice. Swapping to `AsyncSession` is mechanical if concurrency grows. |
-| Extraction transport | Procrastinate worker | FastAPI `BackgroundTasks` | Fewer moving parts for a single-instance demo. `process_document(document_id)` takes only an id, opens its own session and is idempotent, so moving it behind Procrastinate changes the enqueue call only. A process restart during extraction can strand a document in `PROCESSING`; that is the known cost. |
-| Model | Vertex AI Gemini | Live adapter wired behind `AI_BACKEND`; fixture default offline | A live Developer API run on synthetic docs scored 267–268/268 (99.6–100%) across two runs. No client credentials are committed; `vertex` remains production. The free-tier quota forced a 3.5 Flash / 3.1 Flash Lite split for the batch. |
+| Extraction transport | Procrastinate worker | FastAPI `BackgroundTasks` | Fewer moving parts for a single-instance demo. `process_document(document_id)` takes only an id and owns its session, so moving it behind Procrastinate changes the enqueue call only. A process restart during extraction can strand a document in `PROCESSING`; **Re-extract** recovers it. That is the known cost. |
+| Model | Vertex AI Gemini | Live adapter wired behind `AI_BACKEND`; fixture default offline | Live results are in §16.3. No client credentials are committed; `vertex` remains production. |
 | Upload transport | Presigned `PUT` to S3 | Multipart `POST` to the API | Server-side magic-byte validation before storage, and 25 MB is small. The storage adapter already issues presigned reads; presigned writes are an adapter extension, not an architecture change. |
 | Retention | Scheduled deletion job | `scripts/retention.py` CLI, dry-run by default; no scheduler | Wire it to a nightly job in the deployment platform. The policy, cutoff and object deletion are implemented and audited. |
 | XLSX | Deferred until the template arrives | CSV only | A9. XLSX is one `openpyxl` function behind the same column map. |
 | Reports | Per-field and per-supplier | Implemented, with small-sample suppression | Built, not cut. |
-| Settings | Manager-only | Implemented for tolerances, retention, template view and users | Built. |
+| Settings | Manager-only | Implemented for tolerances, retention, template view and a read-only user list | Built. |
+| Spend cap | Warning at 80%, queue at 100% | Configured, not enforced | Provider quota is the backstop; enforce before a production key |
+| Schema repair | One repair pass | Invalid JSON/schema routes to manual entry | Add a repair pass or keep manual entry as the fallback |
+| Optimistic concurrency | `409` on a stale field write | Last write wins, audited | Add an `updated_at` precondition before the multi-user pilot |
+| Line matching | Weighted HSN/qty matcher with ambiguity detection | Description similarity only, best match above 0.70 | Production target before scale |
+| Extraction run key | Model included in the key | Model recorded, not keyed | Add `model_id` before multi-model comparisons |
+| CI | Automated gates | Local gates only | Wire the gates into CI before the pilot |
 
 The pattern: the boundaries that would be expensive to move later (job function, storage adapter, column map, evidence model) are in place. The transport choices that are cheap to swap were chosen for the seven-day window and are documented rather than disguised.
 
@@ -1383,19 +1168,11 @@ The pattern: the boundaries that would be expensive to move later (job function,
 
 ### 19.1 Cut
 
-- Importer portal and notifications — the brief's core build does not require them; a mocked email request demonstrates the intent.
-- HSN classification and duty — explicitly out of scope; the system extracts and format-validates HSN only.
-- Customs portal filing — the client's constraint is to keep the existing software.
-- Excel `.xlsx` formatting — deferred until the real template exists (A9).
-- A durable Procrastinate worker — the job boundary exists; the transport is an in-process background task in this slice.
-- The scheduled retention purge — the CLI exists and is dry-run by default; the nightly scheduler is not wired.
-- OCR fallback — gated on evidence coverage from real scans, not added speculatively.
-- Supplier analytics beyond the basic table — the review loop must be measured first.
-- Multi-organisation UI — schema supports it; the interface does not expose it.
+The cut list is consolidated in §3.2 (out of scope) and §3.3 (deferred with triggers); the as-built gaps are in §18.1. Keeping one list avoids three versions of the same decision.
 
 ### 19.2 Next, in order
 
-1. **Live model on synthetic data — done.** 267–268/268 fields (99.6–100%) across two runs on 25 documents; one intermittent declared-item-count miss. The free-tier quota forced a 3.5 Flash / 3.1 Flash Lite split.
+1. **Live model on synthetic data — done.** See §16.3.
 2. **Week 3 — client inputs.** Real import template (A1); 200 historical shipments with ground truth. Until these exist, export compatibility and accuracy are claims, not facts. Move extraction to the Procrastinate worker and add the retention job in the same pass.
 3. **Week 4 — measure and tune.** Run the harness on the holdout split; add OCR only if evidence coverage demands it; tune tolerances per supplier.
 4. **Week 5 — shadow pilot.** Fourteen users, real shipments, no filing dependency. Measure median review time and correction rate.
@@ -1423,9 +1200,9 @@ The pattern: the boundaries that would be expensive to move later (job function,
 | False positives erode trust | Medium | Adoption failure | WARN/BLOCK split, precision metric, configurable tolerances |
 | Review screen too slow to use | Medium | Misses the 15-minute target | Keyboard flow, uncertain-only mode, measured in pilot |
 | One bad page blocks a shipment | Low | Work stops | Per-document status, manual entry |
-| Model cost overrun | Low | Budget surprise | Spend cap, caching, Flash class |
+| Model cost overrun | Low | Budget surprise | Provider quota and a hard spend cap before production; the cap is configured but not enforced in this slice |
 | DPDP contract not signed before real data | Medium | Legal exposure | Synthetic data until DPA and sub-processor list are agreed |
-| In-process extraction lost on restart | Medium | A document stranded in `PROCESSING` | Visible per-document state; re-upload recovers; Procrastinate is the week-3 fix |
+| In-process extraction lost on restart | Medium | A document stranded in `PROCESSING` | Visible per-document state; **Re-extract** recovers; Procrastinate is the week-3 fix. Re-upload is blocked by the sha256 constraint |
 | Fixture extractor hides a real-model failure | Medium | False confidence in accuracy | UI labels the mode; Vertex adapter has its own eval path once a key exists; the 200-shipment run is the arbiter |
 
 ### 20.2 Open questions for the client
@@ -1453,38 +1230,20 @@ shipment
                                    ▲               │
                                    └──── REJECT ───┘
                                    ▲
-                                   └──── any field edit after approval
+                                   └──── any field or line-item edit after approval
 ```
 
 ## Appendix B — Extraction schemas
 
-**Invoice** — `supplier_name, buyer_name, invoice_number, invoice_date, currency, incoterm, items[{description, hsn_code, quantity, uom, unit_price, total_amount}], freight, insurance, discount, other_charges, invoice_total, gross_weight_kg, net_weight_kg, packages, package_type, container_numbers[]`
+**Invoice** — `supplier_name, buyer_name, invoice_number, invoice_date, currency, incoterm, items[{description, hsn_code, quantity, uom, unit_price, amount}], freight, insurance, discount, invoice_total, gross_weight_kg, net_weight_kg, packages, package_type, container_numbers[]`
 
 **Packing list** — `supplier_name, buyer_name, invoice_reference, packages, package_type, items[{description, quantity, gross_weight_kg, net_weight_kg}], total_gross_weight_kg, total_net_weight_kg, container_numbers[]`
 
 **Bill of lading** — `shipper, consignee, notify_party, bl_number, bl_date, vessel_name, voyage, port_of_loading, port_of_discharge, container_numbers[], packages, gross_weight_kg, measurement_cbm, freight_terms`
 
-Every field carries `quote` and `page`. Absent values are `null`, never inferred.
+Every field carries `quote` and `page`. Absent values are `null`, never inferred. This appendix is the target contract; the implemented field set is the subset in `api/app/extract/ai.py`.
 
-## Appendix C — Check catalogue reference
-
-| Code | Inputs | Severity | Tolerance | Owner |
-|---|---|---|---|---|
-| `LINE_AMOUNT` | qty, unit price, amount | BLOCK | ±0.01 | Executive |
-| `INVOICE_TOTAL` | lines, freight, insurance, discount, total | BLOCK | ±0.01 | Executive |
-| `LINE_COUNT` | declared count, returned count | BLOCK | exact | Executive / re-extract |
-| `QTY_MATCH` | invoice qty, PL qty | BLOCK | exact | Executive |
-| `WEIGHT_MATCH` | invoice/PL/BL gross | WARN | ±0.5% | Executive acknowledge |
-| `PACKAGES_MATCH` | packages across docs | BLOCK | exact | Executive |
-| `CONTAINER_CHECK` | container numbers | BLOCK | ISO 6346 | Executive |
-| `PARTY_MATCH` | buyer, consignee, notify | WARN | 0.90 similarity | Executive |
-| `CURRENCY_MATCH` | currency fields | BLOCK | exact | Executive |
-| `INCOTERM_VALID` | incoterm, freight terms | WARN | exact | Executive |
-| `DATE_SANITY` | invoice date, BL date | WARN | 90 days | Executive |
-| `UOM_CONSISTENCY` | per-line UoM | WARN | exact | Executive |
-| `DOCS_COMPLETE` | document types present | BLOCK | exact | Upload / manager |
-
-## Appendix D — Glossary
+## Appendix C — Glossary
 
 | Term | Meaning in this document |
 |---|---|

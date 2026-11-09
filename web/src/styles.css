@@ -192,10 +192,6 @@ a {
   border: 0;
 }
 
-.user-chip:hover {
-  background: var(--surface-2);
-}
-
 .avatar {
   width: 28px;
   height: 28px;
@@ -1448,6 +1444,11 @@ a {
   font-size: 12px;
 }
 
+.line-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .line-table th {
   text-align: left;
   padding: 6px 9px;
@@ -1644,6 +1645,63 @@ a {
     flex-wrap: wrap;
     padding: 10px 14px;
     gap: 8px;
+  }
+}
+
+@media (max-width: 760px) {
+  .review-head {
+    height: auto;
+    min-height: 58px;
+    padding: 8px 12px;
+    flex-wrap: wrap;
+    row-gap: 6px;
+    gap: 10px;
+  }
+  .review-back {
+    flex: none;
+  }
+  .review-title {
+    flex: 1 1 140px;
+    min-width: 0;
+  }
+  .review-title h1,
+  .review-sub {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .review-title h1 {
+    font-size: 14px;
+  }
+  .review-head .pill {
+    flex: none;
+  }
+  .review-head-right {
+    gap: 6px;
+  }
+  .review-head-right .btn {
+    padding: 0 8px;
+  }
+  .action-buttons {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .action-buttons .btn {
+    padding-left: 9px;
+    padding-right: 9px;
+  }
+  .action-buttons .btn:not(.btn-primary) svg {
+    display: none;
+  }
+  .doc-tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .doc-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .doc-tab {
+    white-space: nowrap;
   }
 }
 

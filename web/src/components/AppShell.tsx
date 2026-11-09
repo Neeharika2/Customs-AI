@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { Icon } from "./Icon";
 import { useAuth } from "../lib/auth";
 import { initials } from "../lib/format";
@@ -19,7 +19,6 @@ function pageTitle(pathname: string): string {
 
 export function AppShell() {
   const { user, signOut } = useAuth();
-  const navigate = useNavigate();
   const location = useLocation();
 
   if (!user) return null;
@@ -76,12 +75,8 @@ export function AppShell() {
         )}
 
         <div className="sidebar-foot">
-          <button
-            type="button"
+          <div
             className="user-chip"
-            onClick={() => {
-              if (user.role === "MANAGER") navigate("/settings");
-            }}
             title={`${user.email} · ${user.role === "MANAGER" ? "Manager" : "Executive"}`}
           >
             <div className="avatar">{initials(user.email.split("@")[0].replace(".", " "))}</div>
@@ -89,7 +84,7 @@ export function AppShell() {
               <strong>{user.email.split("@")[0]}</strong>
               <span>{user.role === "MANAGER" ? "Documentation manager" : "Documentation executive"}</span>
             </div>
-          </button>
+          </div>
           <button
             type="button"
             className="nav-item"

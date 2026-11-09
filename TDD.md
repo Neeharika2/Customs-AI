@@ -6,8 +6,8 @@
 |---|---|
 | **Client** | Company A — freight forwarder and customs broker, Navi Mumbai |
 | **Document** | Technical Design Document (TDD) |
-| **Version** | 1.1 — as-built |
-| **Date** | 4 November 2026 |
+| **Version** | 1.2 — as-built |
+| **Date** | 8 November 2026 |
 | **Author** | Build candidate |
 | **Status** | Implemented — 7-day slice; pilot work identified |
 | **GitHub repository** | https://github.com/Neeharika2/Customs-AI |

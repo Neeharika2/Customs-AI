@@ -1191,8 +1191,9 @@ export function ReviewScreen() {
                       >
                         Line items
                       </div>
-                      <table className="line-table">
-                        <thead>
+                      <div className="line-table-wrap">
+                        <table className="line-table">
+                          <thead>
                           <tr>
                             <th>#</th>
                             <th>Description</th>
@@ -1273,7 +1274,8 @@ export function ReviewScreen() {
                             </tr>
                           ))}
                         </tbody>
-                      </table>
+                        </table>
+                      </div>
                     </>
                   )}
                 </div>

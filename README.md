@@ -140,7 +140,7 @@ deployment.md   runbook
 | Configurable CSV export | Excel `.xlsx` — waiting on the client's real template |
 | Reports, settings, roles | Importer portal, HSN classification, duty, customs filing |
 
-The filing-software column map is seeded with a plausible Shipping Bill layout because the client's actual template was not available. The mapping is data, not code; replacing it does not touch extraction or checks.
+The filing-software column map is seeded with a plausible Bill of Entry layout because the client's actual template was not available. The mapping is data, not code; replacing it does not touch extraction or checks.
 
 Two honest limits from the brief:
 

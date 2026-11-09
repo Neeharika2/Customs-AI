@@ -28,7 +28,7 @@ Extraction knows nothing about the filing software. A template is data:
 
 ```json
 {
-  "name": "Shipping Bill — default",
+  "name": "Bill of Entry — default",
   "version": 1,
   "columns": [
     {"header": "Invoice No",    "source": "invoice_number",  "required": true},
@@ -51,7 +51,7 @@ Extraction knows nothing about the filing software. A template is data:
 
 Two levels of source: shipment-level fields repeat on every row; `item.*` fields iterate line items. This is what filing imports expect and avoids a separate line-item file.
 
-**A1 is visible here.** Without the client's real template, this is a plausible Shipping Bill layout. The architecture guarantees the template can change without touching extraction; it cannot guarantee column compatibility with software nobody has shown us. The TDD says this; the export screen should too, in one muted line: "Template v1 — configurable".
+**A1 is visible here.** Without the client's real template, this is a plausible Bill of Entry layout. The architecture guarantees the template can change without touching extraction; it cannot guarantee column compatibility with software nobody has shown us. The TDD says this; the export screen should too, in one muted line: "Template v1 — configurable".
 
 ### 3.1 Rendering
 
@@ -86,7 +86,7 @@ The last row is easy to forget and genuinely dangerous. Any free-text cell start
 
 ```json
 {
-  "template": {"id": "...", "name": "Shipping Bill — default", "version": 1},
+  "template": {"id": "...", "name": "Bill of Entry — default", "version": 1},
   "headers": ["Invoice No", "Invoice Date", "..."],
   "rows": [["INV-24811", "20/10/2026", "..."]],
   "total_rows": 3,

@@ -588,7 +588,7 @@ The amended-BoE reduction cannot be proven in six weeks. It is measured over thr
 |---|---|---|
 | D1 | Manager-only BLOCK override with written reason | Yes |
 | D2 | Production storage S3 ap-south-1; R2 only for synthetic demo | Yes, disclosed in TDD |
-| D3 | Filing template configurable, seeded with plausible Shipping Bill layout | Yes, labelled A1 |
+| D3 | Filing template configurable, seeded with plausible Bill of Entry layout | Yes, labelled A1 |
 | D4 | Vertex primary; Developer API only for synthetic demo | Yes |
 
 ---

@@ -122,7 +122,7 @@ Whichever is chosen, confirm before Day 2 that:
 |---|---|---|
 | D1 | Manager-only BLOCK override with written reason | Yes |
 | D2 | Production storage S3 `ap-south-1`; R2 only for synthetic demo | Yes |
-| D3 | Export template configurable, seeded with a plausible Shipping Bill layout | Yes |
+| D3 | Export template configurable, seeded with a plausible Bill of Entry layout | Yes |
 | D4 | Vertex primary; Developer API only for synthetic demo | Yes |
 
 Record the actual answers in `docs/preflight-results.md`, including who answered and when.

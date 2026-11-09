@@ -90,7 +90,7 @@ def main() -> None:
                                          ExportTemplate.is_active.is_(True))
         )
         if not template:
-            db.add(ExportTemplate(org_id=org.id, name="Shipping Bill — default",
+            db.add(ExportTemplate(org_id=org.id, name="Bill of Entry — default",
                                   column_map=TEMPLATE, version=1, is_active=True))
         db.flush()
 

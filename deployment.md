@@ -8,7 +8,7 @@ Two files matter alongside this guide: `TDD.md` (design) and `README.md` (overvi
 
 ---
 
-## 0. Production in one command
+## 0. Full stack in one command
 
 ```bash
 docker compose up -d --build
@@ -22,7 +22,7 @@ That starts the application and PostgreSQL. The image builds the SPA, runs Alemb
 |---|---|---|
 | App (uvicorn: API + SPA) | 1 | Background extraction runs in-process |
 | PostgreSQL | 1 | Managed service in a real deployment |
-| Retention purge | 0 daemons | `scripts/retention.py --apply`, scheduled by the platform |
+| Retention purge | 0 daemons | `scripts/retention.py --apply`; scheduling is a platform task, not wired in this slice |
 | Queue worker | 0 | Procrastinate is the next productionisation step |
 
 `uvicorn app.main:app` on its own in a terminal is **not** production: it dies with the terminal, has no TLS and no restart. Production means a supervisor — Docker, systemd, App Runner or Fly — plus managed Postgres, S3 and Vertex.
@@ -75,7 +75,7 @@ cd ..
 
 ### 1.2 Start the database
 
-The bundled database keeps its data in `/tmp/opencode/pgdata`. Leave this terminal running.
+The bundled database keeps its data in `/tmp/customs-ai/pgdata`. Leave this terminal running.
 
 ```bash
 cd api
@@ -86,12 +86,12 @@ Expected output:
 
 ```
 Postgres running
-DATABASE_URL=postgresql+psycopg://postgres@/postgres?host=/tmp/opencode/pgdata
+DATABASE_URL=postgresql+psycopg://postgres@/postgres?host=/tmp/customs-ai/pgdata
 ```
 
 If you prefer your own PostgreSQL, skip this step and set `DATABASE_URL` in `.env` instead.
 
-> **Does the bundled database work everywhere?** It is a review convenience, not a universal installer. `pgserver` ships wheels for Linux x86_64, macOS Intel/Apple Silicon and Windows x64 on Python 3.12. It writes to `/tmp/opencode/pgdata`, which must be writable and may be cleared on reboot. If the binary cannot install (for example Linux ARM or Python 3.13+), skip this step and use Docker Compose (§2) or any PostgreSQL 16, then set `DATABASE_URL` in `.env`. On Windows, use the `DATABASE_URL` printed by `scripts/dev_db.py`; the Unix-socket example above is not universal. The pytest suite defaults to the bundled database; to run it against your own Postgres, set `TEST_DATABASE_URL` and `TEST_ADMIN_DATABASE_URL` before `pytest`.
+> **Does the bundled database work everywhere?** It is a review convenience, not a universal installer. `pgserver` ships wheels for Linux x86_64, macOS Intel/Apple Silicon and Windows x64 on Python 3.12. It writes to `/tmp/customs-ai/pgdata`, which must be writable and may be cleared on reboot. If the binary cannot install (for example Linux ARM or Python 3.13+), skip this step and use Docker Compose (§2) or any PostgreSQL 16, then set `DATABASE_URL` in `.env`. On Windows, use the `DATABASE_URL` printed by `scripts/dev_db.py`; the Unix-socket example above is not universal. The pytest suite defaults to the bundled database; to run it against your own Postgres, set `TEST_DATABASE_URL` and `TEST_ADMIN_DATABASE_URL` before `pytest`.
 
 ### 1.3 Create the schema and demo data
 
@@ -167,7 +167,7 @@ The free tier for `gemini-3.5-flash` allows 20 requests/day; the 26-document dem
 
 ```bash
 cd api
-AI_BACKEND=developer GEMINI_API_KEY=<key> GEMINI_MODEL=gemini-2.5-flash \
+AI_BACKEND=developer GEMINI_API_KEY=<key> GEMINI_MODEL=gemini-3.5-flash \
   uv run python ../seed/seed_demo.py
 uv run python ../eval/run.py
 ```
@@ -209,7 +209,7 @@ The intended shape:
 
 | Component | Service | Region |
 |---|---|---|
-| Application + worker process | AWS App Runner or Fly.io | `ap-south-1` / `bom` |
+| Application process (extraction in-process) | AWS App Runner or Fly.io | `ap-south-1` / `bom` |
 | PostgreSQL | RDS or Supabase | Mumbai |
 | Object storage | S3 | `ap-south-1` |
 | Model inference | Vertex AI Gemini | `asia-south1` |
@@ -226,7 +226,7 @@ The image contains the built SPA, the API and the Alembic migrations. `CMD` runs
 
 ### 3.2 Configure the platform
 
-Set the environment variables in §4. Minimum for a working deployment:
+Set the environment variables in §4. Minimum for a production deployment:
 
 - `DATABASE_URL`
 - `SECRET_KEY`
@@ -237,7 +237,13 @@ Set the environment variables in §4. Minimum for a working deployment:
 
 For Vertex AI, mount an ADC service-account file through the platform's secret mechanism or use workload identity. The service account needs `roles/aiplatform.user` only. The repository never contains the key.
 
-If `AI_BACKEND=fixture` or the Vertex configuration is incomplete, the application uses the deterministic fixture extractor and labels the review screen **Demo extractor**. The live adapter is `api/app/extract/ai.py`; it selects the backend from `AI_BACKEND` and records the model and prompt version per extraction run.
+`AI_BACKEND` is explicit:
+
+- `fixture` is for offline/synthetic use only. It is never the path for real client documents.
+- `developer` uses the Gemini Developer API and requires `GEMINI_API_KEY`. It is for the synthetic demo only.
+- `vertex` is the production path and requires `GOOGLE_CLOUD_PROJECT`, `VERTEX_LOCATION`, a model, and ADC.
+
+In production, the app refuses to start if the selected backend is incomplete. It does not silently fall back to the fixture. If Vertex is unavailable for the demo, set `AI_BACKEND=developer` explicitly. In local/test, an incomplete Vertex configuration uses Gemini when a key is present, otherwise the fixture. The effective backend is shown in `/api/meta` and on the review screen.
 
 ### 3.3 Storage
 
@@ -247,7 +253,7 @@ Create a private S3 bucket in `ap-south-1`:
 - Enable versioning.
 - Enable default encryption.
 - Add a lifecycle rule aligned with `RETENTION_DAYS`.
-- Scope the application IAM policy to `arn:aws:s3:::<bucket>/org/*` with `PutObject`, `GetObject`, `DeleteObject`, and `ListBucket` on the `org/*` prefix only.
+- Scope the application IAM policy to `arn:aws:s3:::<bucket>/org/*` with `PutObject`, `GetObject`, and `DeleteObject`. The application never lists the bucket, so no `ListBucket` permission is required.
 
 Presigned URLs are short-lived. The bucket is never public.
 
@@ -285,12 +291,12 @@ Names only. Values live in the platform secret store; `.env` is ignored by git.
 | `S3_BUCKET` | s3 | Private document bucket |
 | `S3_ACCESS_KEY_ID` | s3 | Scoped application credentials |
 | `S3_SECRET_ACCESS_KEY` | s3 | Scoped application credentials |
-| `AI_BACKEND` | optional | `fixture` (default), `developer` (synthetic only) or `vertex` |
+| `AI_BACKEND` | optional | `fixture` (default; offline/synthetic only), `developer` (synthetic only) or `vertex` |
 | `GEMINI_API_KEY` | developer | Gemini Developer API key; synthetic documents only |
 | `GEMINI_MODEL` | developer | Model ID for the Developer API |
 | `GOOGLE_CLOUD_PROJECT` | Vertex | GCP project for Vertex AI |
 | `VERTEX_LOCATION` | Vertex | `asia-south1` |
-| `VERTEX_MODEL` | Vertex | Pinned model ID; empty selects the fixture |
+| `VERTEX_MODEL` | Vertex | Pinned model ID; required for production Vertex. If Vertex is unavailable, set `AI_BACKEND=developer` for the synthetic demo; production refuses to start rather than falling back to the fixture. |
 | `AI_MONTHLY_CAP_PAISE` | optional | Configured spend guard; not enforced in this slice |
 | `MAX_UPLOAD_MB` | optional | Default 25 |
 | `MAX_PAGES` | optional | Default 40 |
@@ -314,13 +320,13 @@ Never commit any of these values. `.env.example` contains names and local defaul
 | Cross-document checks and gate | Real |
 | Correction history, approval, export | Real |
 | CSV generation in a configurable filing layout | Real |
-| Model extraction | **Live verified on synthetic** — 267–268/268 fields (99.6–100%); `developer` for synthetic, `vertex` for production; fixture offline default |
+| Model extraction | **Live verified on synthetic** — 267–268/268 fields (99.6–100%); `developer` for synthetic, `vertex` for production, `fixture` explicit offline only |
 | Customs portal filing | Out of scope — the export is the hand-off |
 | Importer email intake | Out of scope — staff upload documents |
 | Payments / WhatsApp | Not present |
 | Procrastinate worker | Not used in this slice; extraction runs as an in-process background task |
 
-That last row is a known limitation. The extraction function is isolated behind `process_document`, so replacing the background task with a durable queue is a contained change. A process restart during extraction can leave a document in `PROCESSING`; the status is visible and the document can be re-uploaded.
+That last row is a known limitation. The extraction function is isolated behind `process_document`, so replacing the background task with a durable queue is a contained change. A process restart during extraction can leave a document in `PROCESSING`; the status is visible and the document can be **Re-extracted**. Re-uploading the same file is rejected by the sha256 rule.
 
 ---
 
@@ -332,10 +338,11 @@ That last row is a known limitation. The extraction function is isolated behind 
 | `ModuleNotFoundError: app` | Running from the wrong directory | Run API commands from `api/` |
 | Login returns 401 | Wrong demo password or stale session | Use the demo button; clear cookies |
 | Mutations return 403 `csrf_failed` | Missing CSRF header | The SPA sends it automatically; API clients must send `X-CSRF-Token` from the `csrf` cookie |
-| Review shows **Demo extractor** | `AI_BACKEND=fixture` or no model key | Expected offline; set `AI_BACKEND=vertex` + Vertex credentials, or `developer` + a key for synthetic docs |
+| Review shows **Demo extractor** | `AI_BACKEND=fixture` or no model key | Expected offline. Set `AI_BACKEND=vertex` + Vertex credentials, or `developer` + a key for synthetic docs. In production, an incomplete backend fails startup rather than silently using the fixture. |
 | Upload rejected `document_type_exists` | One invoice/packing list/BL per shipment | Create a new shipment or remove the existing document |
 | Export disabled with blockers | Gate is doing its job | Open review and clear the listed fields/checks |
 | E2E cannot find the database | Seed not run | `cd api && uv run python ../seed/seed_demo.py` |
+| Document stuck in `PROCESSING` | Process restart or provider outage | Open the shipment and use **Re-extract**. Re-uploading the same file is rejected by the sha256 rule. |
 
 ---
 

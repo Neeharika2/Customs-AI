@@ -6,7 +6,7 @@
 |---|---|
 | **Client** | Company A — freight forwarder and customs broker, Navi Mumbai |
 | **Document** | Technical Design Document (TDD) |
-| **Version** | 1.5 — as-built |
+| **Version** | 1.6 — as-built |
 | **Date** | 9 November 2026 |
 | **Author** | Build candidate |
 | **Status** | Implemented — 7-day slice; pilot work identified |
@@ -75,7 +75,7 @@ The same system hardened against 200 real shipments, with the client's actual fi
 | Availability | 99.5% business hours (07:00–20:00 IST) |
 | Data residency | India — application, database, object storage, model inference |
 | Retention | 180 days post-export, configurable |
-| Deployment | Single container image, one process, Mumbai region |
+| Deployment | Single container image, one process; production in Mumbai, live demo in us-east-1 |
 
 Measured in the slice: 9 seeded shipments, 26 synthetic documents, 38 backend tests, 3 end-to-end paths. Live extraction took roughly 10–20 seconds per document; fixture extraction is sub-second. The evaluation result is in §16.3. Cost and latency at 1,100 shipments/month remain estimates until a production Vertex project is connected. The **review-time** and **amendment-rate** targets are pilot measurements, not claims about this build.
 
@@ -221,7 +221,7 @@ Browser
 └──────────────────────────────────────────────────────────────┘
 ```
 
-The boundary is deliberate even though the transport is simplified: `process_document(document_id)` takes only an id, opens its own session, and is idempotent. Moving it behind Procrastinate is a change to the enqueue call, not to the pipeline.
+The boundary is deliberate even though the transport is simplified: `process_document(document_id)` takes only an id and opens its own session, so moving it behind Procrastinate is a change to the enqueue call, not to the pipeline. Re-extract is the recovery path for a document with no completed run.
 
 ### 5.3 Component responsibilities
 
@@ -330,7 +330,7 @@ The design keeps `org_id` on every tenant table from day one (A10) even though o
 
 ### 6.8 Retention
 
-Documents, pages and raw model responses are deleted `retention_days` after export (default 180) by `scripts/retention.py`; the CLI is dry-run by default and scheduling it is a deployment step. Extracted values, corrections, checks and audit events are retained, because the accuracy record is the product's long-term asset and contains no document images. Deletion is logged. A delete-on-request endpoint removes an importer's personal data and any linked documents, and records that it did so.
+Documents, pages and raw model responses are deleted `retention_days` after export (default 180) by `scripts/retention.py`; the CLI is dry-run by default and scheduling it is a deployment step. Extracted values, corrections, checks and audit events are retained, because the accuracy record is the product's long-term asset and contains no document images. Deletion is logged. A delete-on-request endpoint is planned, not built in this slice; the retention CLI and audit trail are the current controls.
 
 ---
 
@@ -402,7 +402,7 @@ Manual entry is a first-class state, not an error page. The page image is displa
 | Retention by provider | No persistent storage; small PDFs sent inline. Vertex uses Cloud Storage/ADC; the Developer API Files API is a transfer mechanism only (48 h) and is never storage. |
 | Logging | Prompt and response stored in our bucket for audit and evaluation, under the same retention rule |
 
-The **Gemini Developer API is not used for client documents**. Its free tier is explicitly used to improve Google's products, and the paid tier retains abuse-monitoring access. For a system whose selling point is confidentiality, that is disqualifying. It may be used for the public demo with synthetic documents, and this document would say so.
+The **Gemini Developer API is not used for client documents**. Its free tier is explicitly used to improve Google's products, and the paid tier retains abuse-monitoring access. For a system whose selling point is confidentiality, that is disqualifying. The live demo uses the Developer API with synthetic documents; this document says so. Production uses Vertex.
 
 ### 8.1.1 Backend selection
 
@@ -416,7 +416,9 @@ The **Gemini Developer API is not used for client documents**. Its free tier is 
 
 The live path is wired into the pipeline, not adjacent to it. `api/app/extract/ai.py` sends the rendered page images with a document-specific prompt, receives a flat payload of fields and lines, and converts it to the same `ParsedDocument` the fixture parser produces. Everything downstream — evidence verification, format gating, confidence, persistence, checks and the human gate — is identical. `extraction_run` records the model ID, prompt version, token counts and region.
 
-The review screen labels the mode **Demo extractor** or **Live model**, so the distinction is never hidden. If the model returns invalid JSON, times out, or fails schema validation, the document routes to `NEEDS_MANUAL_ENTRY` with the reason; it does not silently fall back to the fixture.
+The review screen labels the mode **Demo extractor** or **Live model**, and `/api/meta` exposes the effective backend, model and region. If the model returns invalid JSON, times out, or fails schema validation, the document routes to `NEEDS_MANUAL_ENTRY` with the reason; it does not silently fall back to the fixture.
+
+`AI_BACKEND` resolution is explicit. `fixture` is offline/synthetic only. `developer` uses the Gemini Developer API and requires `GEMINI_API_KEY`. `vertex` requires `GOOGLE_CLOUD_PROJECT`, `VERTEX_LOCATION`, a model, and ADC. In production, startup fails if the selected backend is incomplete; there is no silent fallback to the fixture. In local/test, an incomplete Vertex configuration uses Gemini when a key is present, otherwise the fixture. If Vertex is unavailable for the demo, set `AI_BACKEND=developer` explicitly.
 
 The live path was exercised against the synthetic golden set; the full result, evidence distribution and the intermittent miss are in §16.3.
 
@@ -709,7 +711,7 @@ The gate is evaluated twice: at submit and again at export. The second evaluatio
 ### 10.4 Failure → manual entry
 
 ```
-Worker: model fails schema twice
+Extraction: schema validation fails
    │
    ├─ document.status = NEEDS_MANUAL_ENTRY
    ├─ shipment.status = NEEDS_REVIEW
@@ -881,7 +883,7 @@ XLSX is one function behind the same column map, using `openpyxl`. It is deferre
 | Reports | — | ✓ |
 | Settings and export templates | — | ✓ |
 | View users | — | ✓ |
-| Delete documents before retention | ✓ | ✓ (audited) |
+| Delete documents before retention | ✓ (audited) | ✓ (audited) |
 
 Enforcement is a FastAPI dependency plus a row-level check, not a hidden button. Tests assert the 403/404 behaviour for every restricted route. The UI hides what a role cannot do; the API refuses it independently.
 
@@ -896,13 +898,13 @@ A manager may also act as an executive. There is no separate "manager-only" ship
 | Threat | Vector | Control |
 |---|---|---|
 | Cross-tenant data access | IDOR on shipment ID | Org scoping in the repository layer; 404 on mismatch; test per route |
-| Credential stuffing | Login endpoint | Argon2id, rate limiting, generic error messages, session rotation |
+| Credential stuffing | Login endpoint | Argon2id, in-process rate limiting (5 attempts / 15 min), generic error messages, new session token on login |
 | Session theft | XSS / shared machine | httpOnly + SameSite=Lax, CSRF token, 8-hour idle expiry, revoke-all |
 | Malicious PDF | Crafted file | Magic-byte check, size/page caps, no PDF JS execution, server-side rasterisation only |
 | Presigned URL leakage | Shared link | 5-minute TTL, private bucket, no object listing, URLs never logged |
 | Prompt injection | Text inside a document | No tools, closed schema, escaped rendering, human gate, regression fixture |
 | Insider exfiltration | Legitimate account | Audit trail, least privilege, no bulk download endpoint |
-| Secret leakage | Repository | `.env.example` only, platform secret store, CI secret scan |
+| Secret leakage | Repository | `.env.example` only, platform secret store, secret scan before submission (CI not wired) |
 | PII in logs | Debug logging | Structured logging with field allow-list; document content never logged |
 
 ### 14.2 Application controls
@@ -933,8 +935,8 @@ A manager may also act as an executive. There is no separate "manager-only" ship
 | Purpose limitation | Documents processed solely for shipment verification and export |
 | Data minimisation | Only document pages and extracted fields; no contact enrichment |
 | Notice and consent | Client-facing notice in the pilot onboarding pack; importer consent handled by the client as data fiduciary |
-| Storage limitation | 180-day default retention post-export; scheduled deletion; configurable |
-| Access and correction | Delete-on-request endpoint; correction history records all changes |
+| Storage limitation | 180-day default retention post-export; retention CLI is dry-run by default and not scheduled; configurable |
+| Access and correction | Correction history records all changes; delete-on-request endpoint is planned, not built |
 | Security safeguards | Encryption in transit and at rest; RBAC; audit |
 | Breach notification | Runbook in §17.6; notify the client's DPO within 24 hours and support the 72-hour DPDP notification |
 | Grievance | Client's existing channel; system provides the audit trail |
@@ -943,7 +945,7 @@ The client is the data fiduciary; we are a processor. That relationship, the DPA
 
 ### 14.5 Secrets
 
-No secret is committed. Configuration arrives through environment variables; `.env.example` documents names only. Service accounts use least-privilege roles: the API can read/write its bucket and database; the worker can additionally call Vertex; neither can administer IAM.
+No secret is committed. Configuration arrives through environment variables; `.env.example` documents names only. Service accounts use least-privilege roles: the API can read/write its bucket and database; the extraction process can additionally call Vertex; neither can administer IAM.
 
 ---
 
@@ -963,7 +965,7 @@ No secret is committed. Configuration arrives through environment variables; `.e
 ### 15.2 Failure behaviour
 
 - **Provider outage.** Three transport attempts with short backoff; then the document goes to manual entry with an explanation. The system degrades to a typing tool rather than stopping work.
-- **Database unavailable.** API returns 503 with a retry hint; in-flight jobs fail and retry.
+- **Database unavailable.** API returns 503 with a retry hint; in-flight in-process extraction fails and is left visible for Re-extract. It does not retry on its own.
 - **S3 unavailable.** Uploads fail before metadata is recorded; no orphan rows.
 - **API process down.** In-process extraction stops with it; documents remain visibly queued/processing and can be re-extracted. A durable worker is the fix.
 - **Partial shipment.** Per-document status means one failure never hides two successes.
@@ -1085,7 +1087,7 @@ CI is not wired in this slice. The local gates before submission are:
 | Environment | Purpose | Data |
 |---|---|---|
 | Local | Development, tests | Synthetic, bundled PostgreSQL, local storage |
-| Staging | Demo and review | Synthetic, Mumbai region |
+| Live demo | Reviewer demo | Synthetic; InstaCloud host in us-east-1, local storage; Gemini Developer API (global) |
 | Production | Pilot | Client documents, Mumbai region |
 
 ### 17.2 Packaging
@@ -1175,11 +1177,12 @@ The cut list is consolidated in §3.2 (out of scope) and §3.3 (deferred with tr
 ### 19.2 Next, in order
 
 1. **Live model on synthetic data — done.** See §16.3.
-2. **Week 3 — client inputs.** Real import template (A1); 200 historical shipments with ground truth. Until these exist, export compatibility and accuracy are claims, not facts. Move extraction to the Procrastinate worker and add the retention job in the same pass.
-3. **Week 4 — measure and tune.** Run the harness on the holdout split; add OCR only if evidence coverage demands it; tune tolerances per supplier.
-4. **Week 5 — shadow pilot.** Fourteen users, real shipments, no filing dependency. Measure median review time and correction rate.
-5. **Week 6 — harden and hand over.** Fix the top correction causes, train staff, instrument the amendment baseline.
-6. **Post-pilot.** Duplicate-invoice detection, supplier document checklists (prevent the missing-B/L case upstream), per-supplier tolerances, audit export for customs queries.
+2. **Week 2 — finish and deploy the slice.** Run the reviewer checklist, deploy the demo, fix the top defects and freeze the interface. The 7-day build occupies weeks 1–2.
+3. **Week 3 — client inputs.** Real import template (A1); 200 historical shipments with ground truth. Until these exist, export compatibility and accuracy are claims, not facts. Move extraction to the Procrastinate worker and add the retention job in the same pass.
+4. **Week 4 — measure and tune.** Run the harness on the holdout split; add OCR only if evidence coverage demands it; tune tolerances per supplier.
+5. **Week 5 — shadow pilot.** Fourteen users, real shipments, no filing dependency. Measure median review time and correction rate.
+6. **Week 6 — harden and hand over.** Fix the top correction causes, train staff, instrument the amendment baseline.
+7. **Post-pilot.** Duplicate-invoice detection, supplier document checklists (prevent the missing-B/L case upstream), per-supplier tolerances, audit export for customs queries.
 
 ### 19.3 What would change the design
 

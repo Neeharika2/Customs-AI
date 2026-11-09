@@ -40,7 +40,7 @@ The live 267–268/268 is Gemini on synthetic documents, not the client's 200. T
 
 ## Submission artifacts
 
-- `TDD.md` + `TDD.pdf` (45 pages, v1.5, as-built, screenshots included)
+- `TDD.md` + `TDD.pdf` (46 pages, v1.6, as-built, screenshots included)
 - `deployment.md` (local, Docker, production, env var names, demo logins)
 - `Customs-AI-submission.zip` (TDD.pdf + deployment.md)
 - Repository: https://github.com/Neeharika2/Customs-AI

@@ -40,10 +40,11 @@ The live 267–268/268 is Gemini on synthetic documents, not the client's 200. T
 
 ## Submission artifacts
 
-- `TDD.md` + `TDD.pdf` (51–52 pages, as-built, screenshots included)
+- `TDD.md` + `TDD.pdf` (45 pages, v1.4, as-built, screenshots included)
 - `deployment.md` (local, Docker, production, env var names, demo logins)
 - `Customs-AI-submission.zip` (TDD.pdf + deployment.md)
 - Repository: https://github.com/Neeharika2/Customs-AI
+- Live demo: https://prod-main-app-170155-005gnnd7hct.compute.instacloud-edge.com/
 
 ## What is genuinely left
 
@@ -53,7 +54,7 @@ These are not UI gaps; they need inputs or infrastructure:
 2. **OCR fallback decision.** Only after the real scan evidence rate is measured. Image-only pages currently go to manual entry.
 3. **Durable worker + scheduler.** Extraction runs as an in-process background task; the job function is isolated. Retention is a CLI, not a nightly job. Both are deployment wiring.
 4. **Production hardening.** Upload rate limits, optional malware scan, monitoring/alerts, backups/restore drill.
-5. **Public deployment.** No cloud account/domain was available; the TDD says “not publicly deployed”. Local run is fully documented.
+5. **Public deployment — done.** Live demo: https://prod-main-app-170155-005gnnd7hct.compute.instacloud-edge.com/. The deployment uses the Developer API on synthetic documents; Vertex remains the production path.
 6. **XLSX export.** Deferred until the client's actual import template is supplied (A9). The column map is ready.
 
 ## Next session order

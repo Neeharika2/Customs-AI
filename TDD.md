@@ -6,19 +6,19 @@
 |---|---|
 | **Client** | Company A — freight forwarder and customs broker, Navi Mumbai |
 | **Document** | Technical Design Document (TDD) |
-| **Version** | 1.3 — as-built |
+| **Version** | 1.4 — as-built |
 | **Date** | 9 November 2026 |
 | **Author** | Build candidate |
 | **Status** | Implemented — 7-day slice; pilot work identified |
 | **GitHub repository** | https://github.com/Neeharika2/Customs-AI |
-| **Live application** | Not publicly deployed — run locally per `deployment.md` |
+| **Live application** | https://prod-main-app-170155-005gnnd7hct.compute.instacloud-edge.com/ |
 | **Demo credentials** | See `deployment.md` (not reproduced here) |
 
 > **Reading guide.** This document records engineering decisions and their trade-offs, not definitions of frameworks. Every claim about client behaviour is sourced from the brief. Every assumption is labelled **A1–A10** in §4 and referenced where it matters. Figures marked *estimate* are engineering estimates, not measurements.
 
 ### Build status — what is actually running
 
-The seven-day slice is implemented and running locally. The following is measured, not planned:
+The seven-day slice is implemented and running locally and on the live demo. The following is measured, not planned:
 
 | Item | State |
 |---|---|
@@ -55,7 +55,7 @@ A vision model reads an invoice as well as any competitor's vision model. What i
 
 ### 1.1 What ships in this iteration
 
-A seven-day vertical slice, implemented and usable end to end locally, and deployable as one container:
+A seven-day vertical slice, deployed and usable end to end at https://prod-main-app-170155-005gnnd7hct.compute.instacloud-edge.com/:
 
 create shipment → upload three documents → extract with evidence → cross-check → review side by side → correct → manager approves → export CSV in the filing layout.
 

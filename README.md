@@ -32,6 +32,8 @@ The design decision that matters: **the model proposes, the evidence caps, the c
 
 ## Demo
 
+**Live demo:** https://prod-main-app-170155-005gnnd7hct.compute.instacloud-edge.com/
+
 | Role | Email | Password |
 |---|---|---|
 | Documentation executive | `exec@demo.local` | `demo-exec-2026` |

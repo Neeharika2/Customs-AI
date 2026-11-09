@@ -2,6 +2,8 @@
 
 Customs-AI — AI document intake, cross-document verification and human approval for import shipments.
 
+**Live demo:** https://prod-main-app-170155-005gnnd7hct.compute.instacloud-edge.com/
+
 Two files matter alongside this guide: `TDD.md` (design) and `README.md` (overview). This file is the runbook.
 
 ---

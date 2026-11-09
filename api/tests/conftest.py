@@ -5,7 +5,10 @@ import pathlib
 import sys
 import uuid
 
-TEST_DB = "postgresql+psycopg://postgres@/customs_test?host=/tmp/opencode/pgdata"
+DEFAULT_TEST_DB = "postgresql+psycopg://postgres@/customs_test?host=/tmp/opencode/pgdata"
+DEFAULT_TEST_ADMIN = "postgresql://postgres@/postgres?host=/tmp/opencode/pgdata"
+TEST_DB = os.environ.get("TEST_DATABASE_URL", DEFAULT_TEST_DB)
+TEST_ADMIN = os.environ.get("TEST_ADMIN_DATABASE_URL", DEFAULT_TEST_ADMIN)
 os.environ["DATABASE_URL"] = TEST_DB
 os.environ["APP_ENV"] = "test"
 os.environ["AI_BACKEND"] = "fixture"
@@ -19,9 +22,7 @@ import psycopg  # noqa: E402
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-with psycopg.connect(
-    "postgresql://postgres@/postgres?host=/tmp/opencode/pgdata", autocommit=True
-) as connection:
+with psycopg.connect(TEST_ADMIN, autocommit=True) as connection:
     exists = connection.execute(
         "select 1 from pg_database where datname = 'customs_test'"
     ).fetchone()

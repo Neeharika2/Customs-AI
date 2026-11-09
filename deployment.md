@@ -50,13 +50,15 @@ The compose file is a single-host, production-like stack. It uses local disk by 
 | pnpm | 12 |
 | PostgreSQL | 16 — either the bundled `pgserver` or any local server |
 
+The repository pins Python 3.12 in `api/.python-version`; `uv sync` will use it. The bundled PostgreSQL binary is built for that interpreter.
+
 No Docker is required for local development. A bundled PostgreSQL binary is used through `scripts/dev_db.py`, so a reviewer does not need to install Postgres.
 
 ### 1.1 Install
 
 ```bash
 git clone https://github.com/Neeharika2/Customs-AI.git
-cd customs-ai
+cd Customs-AI
 
 # Python dependencies (creates api/.venv from api/uv.lock)
 cd api
@@ -86,6 +88,8 @@ DATABASE_URL=postgresql+psycopg://postgres@/postgres?host=/tmp/opencode/pgdata
 ```
 
 If you prefer your own PostgreSQL, skip this step and set `DATABASE_URL` in `.env` instead.
+
+> **Does the bundled database work everywhere?** It is a review convenience, not a universal installer. `pgserver` ships wheels for Linux x86_64, macOS Intel/Apple Silicon and Windows x64 on Python 3.12. It writes to `/tmp/opencode/pgdata`, which must be writable and may be cleared on reboot. If the binary cannot install (for example Linux ARM or Python 3.13+), skip this step and use Docker Compose (§2) or any PostgreSQL 16, then set `DATABASE_URL` in `.env`. On Windows, use the `DATABASE_URL` printed by `scripts/dev_db.py`; the Unix-socket example above is not universal. The pytest suite defaults to the bundled database; to run it against your own Postgres, set `TEST_DATABASE_URL` and `TEST_ADMIN_DATABASE_URL` before `pytest`.
 
 ### 1.3 Create the schema and demo data
 
@@ -187,7 +191,11 @@ docker compose exec app uv run python /seed/generate.py
 docker compose exec app uv run python /seed/seed_demo.py
 ```
 
+If the container runs `AI_BACKEND=developer`, those seed commands call Gemini for all 26 demo documents. To seed quickly without quota, add `-e AI_BACKEND=fixture` to the `seed_demo.py` command; new uploads still use the container's configured backend.
+
 Open **http://localhost:8000**. Data survives restarts in the `appdata` and `pgdata` volumes.
+
+> **Before exposing this on a public host:** the Compose file publishes PostgreSQL on 5432 and the app on 8000 for local convenience. Remove the `db` port mapping, bind the app to `127.0.0.1:8000`, and put Caddy/Nginx in front for HTTPS. `APP_ENV=production` sets secure cookies; use localhost or HTTPS. A plain-HTTP IP will not keep the session.
 
 The compose file uses local disk storage (`STORAGE_BACKEND=local`). For a real deployment use S3, described below.
 
@@ -281,7 +289,7 @@ Names only. Values live in the platform secret store; `.env` is ignored by git.
 | `GOOGLE_CLOUD_PROJECT` | Vertex | GCP project for Vertex AI |
 | `VERTEX_LOCATION` | Vertex | `asia-south1` |
 | `VERTEX_MODEL` | Vertex | Pinned model ID; empty selects the fixture |
-| `AI_MONTHLY_CAP_PAISE` | optional | Spend guard per organisation |
+| `AI_MONTHLY_CAP_PAISE` | optional | Configured spend guard; not enforced in this slice |
 | `MAX_UPLOAD_MB` | optional | Default 25 |
 | `MAX_PAGES` | optional | Default 40 |
 | `SESSION_TTL_HOURS` | optional | Default 8 |
@@ -289,6 +297,8 @@ Names only. Values live in the platform secret store; `.env` is ignored by git.
 | `DEMO_EXEC_PASSWORD` | demo only | Demo executive password |
 | `DEMO_MANAGER_PASSWORD` | demo only | Demo manager password |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Vertex | Path to mounted ADC file, if not using workload identity |
+| `TEST_DATABASE_URL` | tests | Optional pytest database override |
+| `TEST_ADMIN_DATABASE_URL` | tests | Optional admin URL used to create the test database |
 
 Never commit any of these values. `.env.example` contains names and local defaults only.
 

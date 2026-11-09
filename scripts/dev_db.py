@@ -9,7 +9,7 @@ import time
 
 import pgserver
 
-DATA = pathlib.Path("/tmp/opencode/pgdata")
+DATA = pathlib.Path("/tmp/customs-ai/pgdata")
 
 
 def main() -> None:

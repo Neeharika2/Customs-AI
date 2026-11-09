@@ -16,6 +16,9 @@ from .security import token_hash
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from .extract import ai
+
+    ai.validate_configuration()
     if settings.is_local:
         Base.metadata.create_all(bind=engine)
     yield
@@ -104,13 +107,24 @@ def healthz() -> dict:
 def meta() -> dict:
     from .extract import ai
 
+    extractor = ai.effective_backend()
+    if extractor == "vertex":
+        model = settings.vertex_model or settings.gemini_model
+        region = settings.vertex_location
+    elif extractor == "developer":
+        model = settings.gemini_model
+        region = "global"
+    else:
+        model = "fixture"
+        region = "local"
+
     return {
         "app": "Customs-AI",
         "version": "0.1.0",
         "env": settings.app_env,
-        "extractor": settings.ai_backend if ai.configured() else "fixture",
-        "model": settings.vertex_model or settings.gemini_model,
-        "region": settings.vertex_location if settings.ai_backend == "vertex" else "global",
+        "extractor": extractor,
+        "model": model,
+        "region": region,
         "storage": settings.storage_backend,
         "storage_region": settings.s3_region if settings.storage_backend == "s3" else "local",
     }

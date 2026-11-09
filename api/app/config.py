@@ -16,10 +16,10 @@ class Settings(BaseSettings):
     secret_key: str = "dev-only-change-me"
 
     # Local default points at the pgserver unix socket created by scripts/dev_db.py.
-    database_url: str = "postgresql+psycopg://postgres@/postgres?host=/tmp/opencode/pgdata"
+    database_url: str = "postgresql+psycopg://postgres@/postgres?host=/tmp/customs-ai/pgdata"
 
     storage_backend: str = "local"
-    local_storage_dir: str = "/tmp/opencode/storage"
+    local_storage_dir: str = "/tmp/customs-ai/storage"
 
     s3_endpoint: str = ""
     s3_region: str = "ap-south-1"
@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     # vertex = production path with regional processing and enterprise terms.
     ai_backend: str = "fixture"
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.5-flash"
     google_cloud_project: str = ""
     vertex_location: str = "asia-south1"
     vertex_model: str = ""

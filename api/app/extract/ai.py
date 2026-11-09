@@ -121,12 +121,56 @@ SCHEMA = {
 }
 
 
+def vertex_configured() -> bool:
+    return bool(
+        settings.google_cloud_project
+        and (settings.vertex_model or settings.gemini_model)
+    )
+
+
+def effective_backend() -> str:
+    """Resolve the extraction backend and fail loudly on a broken config.
+
+    In production a selected backend must be complete. In local/test an
+    incomplete Vertex config may use the Gemini Developer API when a key is
+    present, otherwise it uses the offline fixture. Production never falls
+    back to the fixture silently.
+    """
+    requested = settings.ai_backend.strip().lower()
+    if requested == "fixture":
+        return "fixture"
+    if requested == "vertex":
+        if vertex_configured():
+            return "vertex"
+        if settings.app_env == "production":
+            raise RuntimeError(
+                "AI_BACKEND=vertex is selected but Vertex is not configured. "
+                "Set GOOGLE_CLOUD_PROJECT and VERTEX_MODEL, or set "
+                "AI_BACKEND=developer for the synthetic demo."
+            )
+        if settings.gemini_api_key:
+            return "developer"
+        return "fixture"
+    if requested == "developer":
+        if settings.gemini_api_key:
+            return "developer"
+        if settings.app_env == "production":
+            raise RuntimeError(
+                "AI_BACKEND=developer requires GEMINI_API_KEY."
+            )
+        return "fixture"
+    raise RuntimeError(f"Unknown AI_BACKEND={settings.ai_backend!r}")
+
+
 def configured() -> bool:
-    if settings.ai_backend == "developer":
-        return bool(settings.gemini_api_key)
-    if settings.ai_backend == "vertex":
-        return bool(settings.google_cloud_project and (settings.vertex_model or settings.gemini_model))
-    return False
+    try:
+        return effective_backend() != "fixture"
+    except RuntimeError:
+        return False
+
+
+def validate_configuration() -> None:
+    effective_backend()
 
 
 TRANSIENT_CODES = {429, 500, 502, 503, 504}
@@ -257,7 +301,8 @@ def extract(document_type: DocumentType, images: list[bytes]) -> tuple[AIPayload
     from google import genai
     from google.genai import types
 
-    if settings.ai_backend == "vertex":
+    backend = effective_backend()
+    if backend == "vertex":
         if not settings.google_cloud_project:
             raise RuntimeError("GOOGLE_CLOUD_PROJECT is not configured")
         client = genai.Client(
@@ -266,13 +311,13 @@ def extract(document_type: DocumentType, images: list[bytes]) -> tuple[AIPayload
             location=settings.vertex_location,
         )
         model = settings.vertex_model or settings.gemini_model
-    elif settings.ai_backend == "developer":
+    elif backend == "developer":
         if not settings.gemini_api_key:
             raise RuntimeError("GEMINI_API_KEY is not configured")
         client = genai.Client(api_key=settings.gemini_api_key)
         model = settings.gemini_model
     else:
-        raise RuntimeError("AI backend is not enabled")
+        raise RuntimeError("AI extraction is not enabled")
 
     parts = [types.Part.from_bytes(data=image, mime_type="image/jpeg") for image in images]
     parts.append(types.Part.from_text(text=prompt_for(document_type)))

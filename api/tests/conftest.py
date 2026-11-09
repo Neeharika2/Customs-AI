@@ -5,8 +5,8 @@ import pathlib
 import sys
 import uuid
 
-DEFAULT_TEST_DB = "postgresql+psycopg://postgres@/customs_test?host=/tmp/opencode/pgdata"
-DEFAULT_TEST_ADMIN = "postgresql://postgres@/postgres?host=/tmp/opencode/pgdata"
+DEFAULT_TEST_DB = "postgresql+psycopg://postgres@/customs_test?host=/tmp/customs-ai/pgdata"
+DEFAULT_TEST_ADMIN = "postgresql://postgres@/postgres?host=/tmp/customs-ai/pgdata"
 TEST_DB = os.environ.get("TEST_DATABASE_URL", DEFAULT_TEST_DB)
 TEST_ADMIN = os.environ.get("TEST_ADMIN_DATABASE_URL", DEFAULT_TEST_ADMIN)
 os.environ["DATABASE_URL"] = TEST_DB

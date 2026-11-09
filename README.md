@@ -16,7 +16,7 @@ upload 3 documents → extract with evidence → cross-check → review → appr
 
 - **Upload** invoice, packing list and bill of lading — PDF, JPG or PNG. Files go to private storage; the API validates type, size and page count.
 - **Extract** parties, invoice number/date, currency, Incoterm, line items with HSN, packages, weights and containers. Every field carries a quote, a page and a confidence score.
-- **Cross-check** 13 rules: line arithmetic, invoice total, quantities, packages, gross weight across all three documents, ISO 6346 container checksums, party names, currency, Incoterms, dates and document completeness.
+- **Cross-check** 14 rules: line arithmetic, invoice total, quantities, packages, gross weight across all three documents, net weight below gross, ISO 6346 container checksums, party names, currency, Incoterms, dates and document completeness.
 - **Review** side by side. Selecting a field highlights the exact rectangle on the document and shows the source quote.
 - **Correct line items** — description, HSN, quantity, unit price and amounts are editable with per-line evidence and confidence; edits rerun every check.
 - **History** — every upload, correction, check decision, approval and export in one per-shipment timeline.
@@ -55,7 +55,7 @@ Open **SHP-24811** first. The weight warning is already there.
 | AI | Live Gemini adapter wired (`AI_BACKEND=developer` for synthetic, `vertex` for production); deterministic fixture default |
 | Storage | S3 (`ap-south-1`) in production, local disk for development |
 | Web | React 19, TypeScript, Vite, custom CSS design system |
-| Tests | pytest (35), Playwright (3 end-to-end paths) |
+| Tests | pytest (38), Playwright (3 end-to-end paths) |
 
 No Docker is required for local development: `scripts/dev_db.py` runs a bundled PostgreSQL binary.
 
@@ -94,7 +94,7 @@ That is the runtime: one app process plus Postgres, no separate worker. Cloud pr
 ## Tests
 
 ```bash
-cd api && uv run pytest -q          # 35 backend tests
+cd api && uv run pytest -q          # 38 backend tests
 cd web && pnpm test:e2e             # upload → review → approve → export, manual entry, blocked export
 cd api && uv run python ../eval/run.py
 ```
@@ -137,7 +137,7 @@ deployment.md   runbook
 | Real | Not in this slice |
 |---|---|
 | Upload, validation, rendering, evidence | Live model run without a key (adapter wired; fixture default) |
-| 13 cross-document checks and the gate | Durable job queue (extraction runs as an in-process background task) |
+| 14 cross-document checks and the gate | Durable job queue (extraction runs as an in-process background task) |
 | Corrections, approvals, audit trail, line-item edits | Scheduled retention job (CLI exists) |
 | Configurable CSV export | Excel `.xlsx` — waiting on the client's real template |
 | Reports, settings, roles | Importer portal, HSN classification, duty, customs filing |

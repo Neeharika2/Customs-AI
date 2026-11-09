@@ -142,7 +142,7 @@ These are demo credentials only, supplied through `DEMO_EXEC_PASSWORD` and `DEMO
 ### 1.6 Tests
 
 ```bash
-# 35 backend tests: checks, gate staleness, line edits, history, AI conversion, authz, CSV
+# 38 backend tests: checks, gate staleness, line edits, history, AI conversion, authz, CSV
 cd api && uv run pytest -q
 
 # 3 end-to-end paths: full approval/export, manual entry, blocked export

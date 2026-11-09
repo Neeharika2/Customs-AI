@@ -120,7 +120,7 @@ customs-ai/
 | 2 | ✅ | Upload, validation, render, word boxes, local/S3 storage adapter |
 | 3 | ✅ | Fixture extractor, evidence, confidence, manual-entry path, `extraction_run` |
 | 4 | ✅ | Review workspace: viewer, overlays, evidence, inline edits, keyboard |
-| 5 | ✅ | 13 checks, input-hash resolutions, gate, approval, override |
+| 5 | ✅ | 14 checks, input-hash resolutions, gate, approval, override |
 | 6 | ✅ | CSV export, template, preview, list, reports, settings |
 | 7 | ✅ | 24 backend tests, 3 Playwright paths, eval harness, Docker, docs |
 

@@ -12,7 +12,7 @@ The core build and the core-completeness slice are done and tested. The TDD, PDF
 | Extraction | Live Gemini adapter wired behind `AI_BACKEND`; deterministic fixture is the offline default |
 | Evidence | Quote, page, EXACT/CONTAINED/CLAIMED/NONE, derived highlight boxes |
 | Line items | Editable description, HSN, quantity, unit, price, amount, gross/net; per-line evidence and confidence; edits rerun all checks |
-| Cross-checks | 13 rules, line matching, tolerances, input-hash-bound resolutions |
+| Cross-checks | 14 rules, line matching, tolerances, input-hash-bound resolutions |
 | Gate | Field confirmation, WARN acknowledgement, BLOCK override, approval invalidation |
 | Review | Document beside fields, source highlight, evidence panel, keyboard flow |
 | History | Per-shipment activity drawer: uploads, extraction, corrections, checks, approvals, exports |
@@ -28,7 +28,7 @@ The core build and the core-completeness slice are done and tested. The TDD, PDF
 ## Verification
 
 ```
-35 backend tests           passing
+38 backend tests           passing
 3 Playwright E2E paths     passing (full flow incl. line edit, history and reopen;
                            manual entry; blocked export)
 eval harness               live Gemini: 267–268/268 fields (99.6–100%) over two runs on 25 synthetic docs
@@ -40,7 +40,7 @@ The live 267–268/268 is Gemini on synthetic documents, not the client's 200. T
 
 ## Submission artifacts
 
-- `TDD.md` + `TDD.pdf` (45 pages, v1.4, as-built, screenshots included)
+- `TDD.md` + `TDD.pdf` (45 pages, v1.5, as-built, screenshots included)
 - `deployment.md` (local, Docker, production, env var names, demo logins)
 - `Customs-AI-submission.zip` (TDD.pdf + deployment.md)
 - Repository: https://github.com/Neeharika2/Customs-AI

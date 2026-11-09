@@ -6,7 +6,7 @@
 |---|---|
 | **Client** | Company A — freight forwarder and customs broker, Navi Mumbai |
 | **Document** | Technical Design Document (TDD) |
-| **Version** | 1.4 — as-built |
+| **Version** | 1.5 — as-built |
 | **Date** | 9 November 2026 |
 | **Author** | Build candidate |
 | **Status** | Implemented — 7-day slice; pilot work identified |
@@ -26,7 +26,7 @@ The seven-day slice is implemented and running locally and on the live demo. The
 | Auth | Argon2id, database sessions, CSRF double-submit, org scoping, manager/executive split |
 | Ingestion | PDF/JPEG/PNG upload, magic-byte and size validation, PyMuPDF rendering, word-level boxes |
 | Extraction | Deterministic fixture extractor locally; Vertex AI adapter behind the same interface |
-| Verification | 13 rules, `input_hash`-bound resolutions, gate, approval invalidation |
+| Verification | 14 rules, `input_hash`-bound resolutions, gate, approval invalidation |
 | Review | Document + fields + evidence + checks in one screen; manual entry; keyboard flow |
 | Export | Configurable column map, CSV with BOM/CRLF/formula escaping, preview and gate |
 | Reporting | Correction rate by field and supplier, evidence coverage, first-pass acceptance |
@@ -34,7 +34,7 @@ The seven-day slice is implemented and running locally and on the live demo. The
 | History | Per-shipment activity drawer across uploads, corrections, decisions and exports |
 | Export template | Versioned editor in settings |
 | Live model path | Gemini adapter wired behind `AI_BACKEND`; fixture remains the offline default |
-| Tests | 35 pytest, 3 Playwright end-to-end paths, evaluation harness |
+| Tests | 38 pytest, 3 Playwright end-to-end paths, evaluation harness |
 | Evaluation | Live and fixture results measured on the synthetic golden set; see §16.3 |
 
 **Deviations from the design as originally written** are listed in §18.1. They are recorded rather than hidden. The most material: extraction runs as an in-process background task rather than a Procrastinate worker, and the demo can run either the fixture or a Developer API key; Vertex credentials are not committed.
@@ -77,7 +77,7 @@ The same system hardened against 200 real shipments, with the client's actual fi
 | Retention | 180 days post-export, configurable |
 | Deployment | Single container image, one process, Mumbai region |
 
-Measured in the slice: 9 seeded shipments, 26 synthetic documents, 35 backend tests, 3 end-to-end paths. Live extraction took roughly 10–20 seconds per document; fixture extraction is sub-second. The evaluation result is in §16.3. Cost and latency at 1,100 shipments/month remain estimates until a production Vertex project is connected. The **review-time** and **amendment-rate** targets are pilot measurements, not claims about this build.
+Measured in the slice: 9 seeded shipments, 26 synthetic documents, 38 backend tests, 3 end-to-end paths. Live extraction took roughly 10–20 seconds per document; fixture extraction is sub-second. The evaluation result is in §16.3. Cost and latency at 1,100 shipments/month remain estimates until a production Vertex project is connected. The **review-time** and **amendment-rate** targets are pilot measurements, not claims about this build.
 
 ---
 
@@ -125,7 +125,7 @@ Two supporting metrics are measured from day one because they predict the headli
 
 ### 3.1 In scope
 
-Shipment list · create and upload · AI extraction with per-field evidence and confidence · side-by-side review with source highlighting · 13 cross-document checks · correction history · manager approval and BLOCK override · CSV export through a configurable column map · basic per-field and per-supplier accuracy reporting · two roles and organisation isolation.
+Shipment list · create and upload · AI extraction with per-field evidence and confidence · side-by-side review with source highlighting · 14 cross-document checks · correction history · manager approval and BLOCK override · CSV export through a configurable column map · basic per-field and per-supplier accuracy reporting · two roles and organisation isolation.
 
 ### 3.2 Out of scope
 
@@ -585,6 +585,7 @@ Pure functions, deterministic, each returning `PASS | WARN | BLOCK`, a human sen
 | 11 | `DATE_SANITY` | ≤ today; ≤ B/L; ≤ 90 days | WARN | Executive |
 | 12 | `UOM_CONSISTENCY` | same UoM per line | WARN | Executive |
 | 13 | `DOCS_COMPLETE` | all required docs extracted | BLOCK | Upload / manager |
+| 14 | `NET_GROSS` | net weight ≤ gross weight per document and packing line | BLOCK | Executive |
 
 ### 9.3 Severity philosophy
 
@@ -1008,7 +1009,7 @@ The rules engine is where a defect reaches a customs filing, so it receives the 
 | Export | 6 | Header order, quoting, BOM, row count, template version |
 | E2E | 3 | Happy path, blocked path, manual-entry path |
 
-**Shipped in this slice:** 35 pytest cases covering the check catalogue, confidence gates, stale-resolution invalidation, line-item corrections, history, document removal, template versioning, pagination, reopen, AI payload conversion, authz, CSRF, cross-org access and CSV correctness; 3 Playwright paths. The larger counts above are the pilot target. The slice tests the highest-consequence logic rather than every permutation, and §16.6 says what that leaves untested.
+**Shipped in this slice:** 38 pytest cases covering the check catalogue, confidence gates, stale-resolution invalidation, line-item corrections, history, document removal, template versioning, pagination, reopen, AI payload conversion, authz, CSRF, cross-org access and CSV correctness; 3 Playwright paths. The larger counts above are the pilot target. The slice tests the highest-consequence logic rather than every permutation, and §16.6 says what that leaves untested.
 
 ### 16.3 Golden set and harness
 
@@ -1060,7 +1061,7 @@ Extraction accuracy and discrepancy quality are reported separately. A system ca
 
 CI is not wired in this slice. The local gates before submission are:
 
-- `pytest` passes (35 cases).
+- `pytest` passes (38 cases).
 - `pnpm build` type-checks the SPA with `tsc`.
 - Ruff lint and format on the API.
 - Alembic applies cleanly to a fresh database.
@@ -1147,8 +1148,9 @@ The slice is honest about the gap between the design and the delivery. These are
 |---|---|---|---|
 | Database session | SQLAlchemy async | SQLAlchemy sync, FastAPI threadpool | The workload is small and I/O-bound; sync sessions remove an async failure surface from the 7-day slice. Swapping to `AsyncSession` is mechanical if concurrency grows. |
 | Extraction transport | Procrastinate worker | FastAPI `BackgroundTasks` | Fewer moving parts for a single-instance demo. `process_document(document_id)` takes only an id and owns its session, so moving it behind Procrastinate changes the enqueue call only. A process restart during extraction can strand a document in `PROCESSING`; **Re-extract** recovers it. That is the known cost. |
-| Model | Vertex AI Gemini | Live adapter wired behind `AI_BACKEND`; fixture default offline | Live results are in §16.3. No client credentials are committed; `vertex` remains production. |
+| Model | Vertex AI Gemini | Live adapter wired behind `AI_BACKEND`; fixture default offline. The live demo uses the Gemini Developer API on synthetic documents. | Live results are in §16.3. No client credentials are committed; `vertex` remains production. |
 | Upload transport | Presigned `PUT` to S3 | Multipart `POST` to the API | Server-side magic-byte validation before storage, and 25 MB is small. The storage adapter already issues presigned reads; presigned writes are an adapter extension, not an architecture change. |
+| Data residency | S3 ap-south-1 | The live demo stores documents on the host's InstaCloud volume in us-east-1, not Mumbai. | The demo contains synthetic documents only. Wire S3 ap-south-1 before any real client document is processed. |
 | Retention | Scheduled deletion job | `scripts/retention.py` CLI, dry-run by default; no scheduler | Wire it to a nightly job in the deployment platform. The policy, cutoff and object deletion are implemented and audited. |
 | XLSX | Deferred until the template arrives | CSV only | A9. XLSX is one `openpyxl` function behind the same column map. |
 | Reports | Per-field and per-supplier | Implemented, with small-sample suppression | Built, not cut. |

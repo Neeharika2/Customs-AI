@@ -47,6 +47,27 @@ def test_weight_within_tolerance_passes(db, world):
     assert str(check.severity) == "PASS"
 
 
+def test_net_weight_above_gross_blocks(db, world):
+    shipment, invoice, packing, bl = three_documents(db, world, ref="SHP-NET")
+    add_field(db, shipment, invoice, "gross_weight_kg", "760.00")
+    add_field(db, shipment, invoice, "net_weight_kg", "3060.00")
+
+    check = check_for(db, shipment, "NET_GROSS")
+    assert check is not None
+    assert str(check.severity) == "BLOCK"
+    assert "net weight exceeds gross weight" in check.message.lower()
+
+
+def test_net_weight_below_gross_passes(db, world):
+    shipment, invoice, packing, bl = three_documents(db, world, ref="SHP-NET2")
+    add_field(db, shipment, invoice, "gross_weight_kg", "760.00")
+    add_field(db, shipment, invoice, "net_weight_kg", "740.00")
+
+    check = check_for(db, shipment, "NET_GROSS")
+    assert check is not None
+    assert str(check.severity) == "PASS"
+
+
 def test_package_mismatch_blocks(db, world):
     shipment, invoice, packing, bl = three_documents(db, world, ref="SHP-PKG")
     add_field(db, shipment, invoice, "packages", "120")
@@ -109,7 +130,7 @@ def test_missing_document_blocks(db, world):
 
     check = check_for(db, shipment, "DOCS_COMPLETE")
     assert str(check.severity) == "BLOCK"
-    assert "BL" in check.message or "Bill" in check.message
+    assert "bill of lading" in check.message.lower()
 
 
 def test_checks_are_deterministic(db, world):

@@ -195,6 +195,8 @@ export interface Meta {
   extractor: "vertex" | "developer" | "fixture";
   model: string;
   region: string;
+  storage: "local" | "s3";
+  storage_region: string;
 }
 
 export interface FieldMutation {

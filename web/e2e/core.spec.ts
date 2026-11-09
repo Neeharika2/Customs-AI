@@ -11,7 +11,6 @@ function ref(prefix = "SHP") {
 async function login(page: Page, role: "Executive" | "Manager") {
   await page.goto("/login");
   await page.getByRole("button", { name: role }).click();
-  await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/shipments$/);
 }
 

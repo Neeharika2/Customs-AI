@@ -82,6 +82,13 @@ export function Shipments() {
         limit,
       }),
     placeholderData: (previous) => previous,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      const extracting =
+        (data?.counts.EXTRACTING ?? 0) > 0 ||
+        data?.items.some((item) => item.status === "EXTRACTING");
+      return extracting ? 2000 : false;
+    },
   });
 
   const data = query.data;

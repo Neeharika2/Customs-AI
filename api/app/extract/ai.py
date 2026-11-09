@@ -129,6 +129,37 @@ def configured() -> bool:
     return False
 
 
+TRANSIENT_CODES = {429, 500, 502, 503, 504}
+TRANSIENT_TOKENS = (
+    "429",
+    "500",
+    "502",
+    "503",
+    "504",
+    "UNAVAILABLE",
+    "RESOURCE_EXHAUSTED",
+    "DEADLINE",
+    "TIMEOUT",
+    "TEMPORARILY",
+)
+
+
+def _is_transient(exc: Exception) -> bool:
+    """Classify provider failures that are worth retrying.
+
+    The SDK sometimes exposes the HTTP status as a numeric attribute and
+    sometimes only in the message, so check both.
+    """
+    code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    try:
+        if int(code) in TRANSIENT_CODES:
+            return True
+    except (TypeError, ValueError):
+        pass
+    text = str(exc).upper()
+    return any(token in text for token in TRANSIENT_TOKENS)
+
+
 def prompt_for(document_type: DocumentType) -> str:
     keys = ", ".join(FIELD_KEYS[document_type])
     kind = str(document_type).lower()
@@ -248,7 +279,8 @@ def extract(document_type: DocumentType, images: list[bytes]) -> tuple[AIPayload
 
     response = None
     last_error: Exception | None = None
-    for attempt in range(3):
+    attempts = 5
+    for attempt in range(attempts):
         try:
             response = client.models.generate_content(
                 model=model,
@@ -262,12 +294,11 @@ def extract(document_type: DocumentType, images: list[bytes]) -> tuple[AIPayload
             break
         except Exception as exc:  # provider rate limit / transient capacity
             last_error = exc
-            text = str(exc)
-            if not any(code in text for code in ("503", "429", "500", "DEADLINE")):
+            if not _is_transient(exc) or attempt == attempts - 1:
                 raise
-            time.sleep(2 + attempt * 3)
+            time.sleep(min(2**attempt, 16))
     if response is None:
-        raise last_error or RuntimeError("model call failed")
+        raise RuntimeError(f"Gemini call failed after {attempts} attempts: {last_error}") from last_error
     text = (response.text or "").strip()
     if text.startswith("```"):
         text = text.strip("`")

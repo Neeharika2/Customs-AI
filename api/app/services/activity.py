@@ -191,6 +191,9 @@ def build_activity(db: Session, shipment: Shipment, limit: int = 80) -> list[dic
             title = f"{doc_label} extracted"
         elif event.action == "document.manual_entry":
             title = f"{doc_label} entered manually"
+        elif event.action == "document.ai_error":
+            title = f"{doc_label} AI extraction failed"
+            detail = str(meta.get("error", ""))[:160]
         elif event.action == "document.deleted":
             title = f"{doc_label} removed"
         elif event.action == "shipment.created":

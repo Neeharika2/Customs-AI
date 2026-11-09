@@ -68,7 +68,7 @@ export function NewShipment() {
                 className="input num"
                 value={ref}
                 onChange={(event) => setRef(event.target.value.toUpperCase())}
-                placeholder="SHP-24811"
+                placeholder="SHP-25001"
                 required
               />
             </div>

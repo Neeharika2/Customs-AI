@@ -234,6 +234,7 @@ function FieldRow({
             type="button"
             className="confirm-btn"
             title="Confirm this field"
+            aria-label="Confirm this field"
             onClick={onConfirm}
           >
             <Icon name="check" size={13} />
@@ -247,14 +248,19 @@ function FieldRow({
 function ManualCard({
   document,
   onSave,
+  onReprocess,
   busy,
+  reprocessing,
 }: {
   document: DocumentReview;
   onSave: (values: Record<string, string>) => void;
+  onReprocess: () => void;
   busy: boolean;
+  reprocessing: boolean;
 }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const config = MANUAL_FIELDS[document.type] ?? [];
+  const aiError = document.error_code === "ai_error";
   return (
     <div className="group">
       <div className="group-head">
@@ -264,7 +270,7 @@ function ManualCard({
         <span className="right">
           <span className="pill pill-review">
             <i className="dot" />
-            Unreadable
+            {aiError ? "AI error" : "Unreadable"}
           </span>
         </span>
       </div>
@@ -272,8 +278,9 @@ function ManualCard({
         <div className="manual-note">
           <Icon name="alert" size={14} />
           <span>
-            No usable text layer. Type the values from the page on the left. They enter the same
-            checks and gate as extracted values.
+            {aiError
+              ? "The AI service failed after retries. Re-extract the document, or type the values from the page. They enter the same checks and gate as extracted values."
+              : "No usable text layer. Type the values from the page on the left. They enter the same checks and gate as extracted values."}
           </span>
         </div>
         {config.map((item) => (
@@ -292,7 +299,16 @@ function ManualCard({
             />
           </div>
         ))}
-        <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end" }}>
+        <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button
+            className="btn btn-sm"
+            type="button"
+            disabled={reprocessing}
+            onClick={onReprocess}
+          >
+            <Icon name="refresh" size={13} className={reprocessing ? "spin" : ""} />
+            Re-extract
+          </button>
           <button
             className="btn btn-primary btn-sm"
             type="button"
@@ -509,6 +525,12 @@ export function ReviewScreen() {
     queryKey: ["review", id],
     queryFn: () => api.review(id as string),
     enabled: Boolean(id),
+    refetchInterval: (query) =>
+      query.state.data?.documents.some((doc) =>
+        ["UPLOADED", "QUEUED", "PROCESSING"].includes(doc.status),
+      )
+        ? 1500
+        : false,
   });
   const metaQuery = useQuery({ queryKey: ["meta"], queryFn: api.meta });
   const review = reviewQuery.data;
@@ -674,6 +696,15 @@ export function ReviewScreen() {
       void queryClient.invalidateQueries({ queryKey: ["review", id] });
     },
     onError: (error) => flash(error instanceof ApiError ? error.detail : "Could not save manual entry"),
+  });
+
+  const reprocess = useMutation({
+    mutationFn: (documentId: string) => api.reprocessDocument(documentId),
+    onSuccess: () => {
+      flash("Re-extraction queued");
+      void queryClient.invalidateQueries({ queryKey: ["review", id] });
+    },
+    onError: (error) => flash(error instanceof ApiError ? error.detail : "Could not re-extract"),
   });
 
   const patchLine = useMutation({
@@ -1108,10 +1139,28 @@ export function ReviewScreen() {
                     key={type}
                     document={document}
                     busy={manual.isPending}
+                    reprocessing={reprocess.isPending}
+                    onReprocess={() => reprocess.mutate(document.id)}
                     onSave={(values) =>
                       manual.mutate({ documentId: document.id, values })
                     }
                   />
+                );
+              }
+
+              if (["UPLOADED", "QUEUED", "PROCESSING"].includes(document.status)) {
+                return (
+                  <div className="group" key={type}>
+                    <div className="group-head">
+                      <Icon name="file" size={14} />
+                      {DOC_LABEL[type]}
+                      <span className="muted">· reading</span>
+                    </div>
+                    <div className="manual-note" style={{ padding: "12px 13px" }}>
+                      <Icon name="refresh" size={14} className="spin" />
+                      <span>Extraction is running. This panel updates automatically.</span>
+                    </div>
+                  </div>
                 );
               }
 

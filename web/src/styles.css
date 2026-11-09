@@ -1947,9 +1947,16 @@ a {
   transition: opacity 100ms ease, background 100ms ease;
 }
 
+.confirm-btn:focus-visible,
 .field-row:hover .confirm-btn,
 .field-row.active .confirm-btn {
   opacity: 1;
+}
+
+@media (hover: none) {
+  .confirm-btn {
+    opacity: 1;
+  }
 }
 
 .confirm-btn:hover {

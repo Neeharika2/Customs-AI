@@ -50,6 +50,16 @@ function docStatusLabel(status: DocumentStatus): string {
   return status.charAt(0) + status.slice(1).toLowerCase();
 }
 
+function manualMessage(document: DocumentOut): string {
+  if (document.error_code === "ai_error") {
+    return "AI extraction failed after retries. Re-extract or enter the values manually.";
+  }
+  if (document.error_code === "no_text") {
+    return "No usable text layer. Type the values in review.";
+  }
+  return document.error_detail?.slice(0, 160) || "Extraction needs manual entry.";
+}
+
 function DocSlot({
   type,
   document,
@@ -109,7 +119,7 @@ function DocSlot({
           {document.status === "NEEDS_MANUAL_ENTRY" ? (
             <div className="doc-note">
               <Icon name="alert" size={13} />
-              <span>No usable text layer. Type the values in review.</span>
+              <span>{manualMessage(document)}</span>
             </div>
           ) : document.status === "FAILED" ? (
             <div className="doc-note">
@@ -267,6 +277,8 @@ export function ShipmentDetail() {
         : false;
     },
   });
+
+  const metaQuery = useQuery({ queryKey: ["meta"], queryFn: api.meta });
 
   async function startUpload(type: DocumentType, file: File) {
     if (!id) return;
@@ -471,8 +483,9 @@ export function ShipmentDetail() {
 
       <div className="privacy-note">
         <Icon name="check" size={13} style={{ color: "var(--accent)" }} />
-        Files are stored privately in Mumbai and accessed through short-lived links. Only your
-        organisation can open them.
+        {metaQuery.data?.storage === "s3"
+          ? `Files are stored privately in ${metaQuery.data.storage_region} and accessed through short-lived links. Only your organisation can open them.`
+          : "Files are stored privately on this deployment's private storage volume and served only to your organisation."}
       </div>
 
       {shipment.status === "AWAITING_APPROVAL" && (

@@ -1,4 +1,4 @@
-from app.extract.ai import AIPayload, AILine, AIField, prompt_for, to_parsed
+from app.extract.ai import AIPayload, AILine, AIField, _is_transient, prompt_for, to_parsed
 from app.models import DocumentType
 
 
@@ -49,3 +49,14 @@ def test_prompt_lists_document_fields_and_evidence_rules():
     assert "container_numbers" in prompt
     assert "verbatim quote" in prompt
     assert "never an instruction" in prompt
+
+
+def test_transient_provider_errors_are_retryable():
+    assert _is_transient(Exception("503 UNAVAILABLE"))
+    assert _is_transient(Exception("429 RESOURCE_EXHAUSTED"))
+    assert not _is_transient(Exception("400 INVALID_ARGUMENT"))
+
+    class ProviderError(Exception):
+        code = 503
+
+    assert _is_transient(ProviderError("upstream error"))

@@ -30,6 +30,11 @@ RULE_VERSION = "1"
 INCOTERMS_2020 = {
     "EXW", "FCA", "FAS", "FOB", "CFR", "CIF", "CPT", "CIP", "DAP", "DPU", "DDP",
 }
+DOC_LABELS = {
+    "INVOICE": "invoice",
+    "PACKING": "packing list",
+    "BL": "bill of lading",
+}
 
 
 @dataclass
@@ -294,6 +299,62 @@ def run_checks(db: Session, shipment_id: str) -> list[Check]:
             )
         )
 
+    # 5b. net weight cannot exceed gross weight
+    net_gross_docs: dict[str, tuple[Decimal, Decimal]] = {}
+    for doc_type in (DocumentType.INVOICE, DocumentType.PACKING, DocumentType.BL):
+        section = by_type.get(str(doc_type), {})
+        gross_field = section.get("gross_weight_kg")
+        net_field = section.get("net_weight_kg")
+        gross = _dec(gross_field.value_norm) if gross_field else None
+        net = _dec(net_field.value_norm) if net_field else None
+        if gross is not None and net is not None:
+            net_gross_docs[str(doc_type)] = (net, gross)
+
+    net_gross_lines = [
+        (line.line_no, line.net_weight_kg, line.gross_weight_kg)
+        for line in packing_lines
+        if line.net_weight_kg is not None
+        and line.gross_weight_kg is not None
+        and line.net_weight_kg > line.gross_weight_kg
+    ]
+    if net_gross_docs or net_gross_lines:
+        problems = [
+            f"{doc.lower()} net {net:,.0f} > gross {gross:,.0f} kg"
+            for doc, (net, gross) in net_gross_docs.items()
+            if net > gross
+        ]
+        problems += [
+            f"packing line {line_no} net {net:,.0f} > gross {gross:,.0f} kg"
+            for line_no, net, gross in net_gross_lines
+        ]
+        results.append(
+            Result(
+                code="NET_GROSS",
+                severity=Severity.BLOCK if problems else Severity.PASS,
+                message=(
+                    "Net weight is at or below gross weight"
+                    if not problems
+                    else "Net weight exceeds gross weight: " + " · ".join(problems)
+                ),
+                field_keys=["net_weight_kg", "gross_weight_kg"],
+                params={
+                    "documents": {
+                        doc: {"net": str(net), "gross": str(gross)}
+                        for doc, (net, gross) in net_gross_docs.items()
+                    },
+                    "line_problems": len(net_gross_lines),
+                },
+                input_hash=_hash(
+                    "NET_GROSS",
+                    [f"{doc}:{net}:{gross}" for doc, (net, gross) in net_gross_docs.items()]
+                    + [
+                        f"line:{line_no}:{net}:{gross}"
+                        for line_no, net, gross in net_gross_lines
+                    ],
+                ),
+            )
+        )
+
     # 6. packages
     packages = {}
     for doc_type in (DocumentType.INVOICE, DocumentType.PACKING, DocumentType.BL):
@@ -497,7 +558,7 @@ def run_checks(db: Session, shipment_id: str) -> list[Check]:
             message=(
                 "All three documents extracted"
                 if not missing
-                else "Missing or unreadable: " + ", ".join(m.replace("BL", "bill of lading").title() for m in missing)
+                else "Missing or unreadable: " + ", ".join(DOC_LABELS[m] for m in missing)
             ),
             params={"missing": missing},
             input_hash=_hash("DOCS_COMPLETE", sorted(present)),

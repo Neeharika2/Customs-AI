@@ -30,10 +30,22 @@ export function Login() {
     }
   }
 
-  function fill(kind: "exec" | "manager") {
-    setEmail(`${kind}@demo.local`);
-    setPassword(kind === "exec" ? "demo-exec-2026" : "demo-manager-2026");
+  async function demoSignIn(kind: "exec" | "manager") {
     setError(null);
+    setBusy(true);
+    const demoEmail = `${kind}@demo.local`;
+    const demoPassword = kind === "exec" ? "demo-exec-2026" : "demo-manager-2026";
+    setEmail(demoEmail);
+    setPassword(demoPassword);
+    try {
+      await signIn(demoEmail, demoPassword);
+      const target = (location.state as { from?: string } | null)?.from ?? "/shipments";
+      navigate(target, { replace: true });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Could not sign in. Try again.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -134,11 +146,23 @@ export function Login() {
           <div className="demo-box">
             <div className="title">Demo access</div>
             <div className="demo-buttons">
-              <button type="button" className="btn" onClick={() => fill("exec")}>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void demoSignIn("exec")}
+                disabled={busy}
+                title="Sign in with the demo executive account"
+              >
                 <Icon name="user" size={14} />
                 Executive
               </button>
-              <button type="button" className="btn" onClick={() => fill("manager")}>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void demoSignIn("manager")}
+                disabled={busy}
+                title="Sign in with the demo manager account"
+              >
                 <Icon name="check" size={14} />
                 Manager
               </button>

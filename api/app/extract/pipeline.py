@@ -189,15 +189,15 @@ def process_document(
             except Exception as exc:  # provider/transport/schema failure
                 document.status = DocumentStatus.NEEDS_MANUAL_ENTRY
                 document.error_code = "ai_error"
-                document.error_detail = str(exc)[:400]
+                document.error_detail = f"AI extraction failed after retries: {exc}"[:400]
                 audit(
                     db,
                     org_id=document.shipment.org_id,
                     actor_id=actor_id,
-                    action="document.manual_entry",
+                    action="document.ai_error",
                     entity="document",
                     entity_id=document.id,
-                    meta={"type": str(document.type), "reason": "ai_error"},
+                    meta={"type": str(document.type), "reason": "ai_error", "error": str(exc)[:200]},
                 )
                 db.commit()
                 _derive_shipment_status(db, document.shipment_id)

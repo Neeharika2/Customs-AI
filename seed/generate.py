@@ -323,6 +323,11 @@ def build_specs() -> list[Spec]:
     ) -> Spec:
         price = Decimal(unit)
         amount = price * qty
+        gross_invoice = Decimal(gross_inv)
+        gross_packing = Decimal(gross_pl)
+        gross_bl = Decimal(gross_bl)
+        net_invoice = (gross_invoice * Decimal("0.98")).quantize(Decimal("0.01"))
+        net_packing = (gross_packing * Decimal("0.98")).quantize(Decimal("0.01"))
         containers = [valid_container("MSCU123456"), valid_container("MSCU765432")]
         return Spec(
             ref=ref,
@@ -335,17 +340,17 @@ def build_specs() -> list[Spec]:
             bl_no=f"BL-{ref.split('-')[1]}",
             bl_date="22/10/2026",
             items=[Item(description, hsn, qty, "PCS", price, amount,
-                        Decimal(gross_pl), Decimal("3100.00"), chinese)],
+                        gross_packing, net_packing, chinese)],
             freight=Decimal("450.00"),
             insurance=Decimal("120.00"),
             packages_invoice=packages,
             packages_packing=packages,
             packages_bl=packages,
-            gross_invoice=Decimal(gross_inv),
-            gross_packing=Decimal(gross_pl),
-            gross_bl=Decimal(gross_bl),
-            net_invoice=Decimal("3060.00"),
-            net_packing=Decimal("3100.00"),
+            gross_invoice=gross_invoice,
+            gross_packing=gross_packing,
+            gross_bl=gross_bl,
+            net_invoice=net_invoice,
+            net_packing=net_packing,
             containers=containers,
         )
 

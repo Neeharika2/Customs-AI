@@ -111,6 +111,8 @@ def meta() -> dict:
         "extractor": settings.ai_backend if ai.configured() else "fixture",
         "model": settings.vertex_model or settings.gemini_model,
         "region": settings.vertex_location if settings.ai_backend == "vertex" else "global",
+        "storage": settings.storage_backend,
+        "storage_region": settings.s3_region if settings.storage_backend == "s3" else "local",
     }
 
 
